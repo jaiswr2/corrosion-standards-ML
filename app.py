@@ -869,8 +869,8 @@ st.markdown(
 
   .subtitle {{
     color: {BLACKTXT};
-    font-size: 30px;
-    font-weight: 500;
+    font-size: 20px;
+    font-weight: 300;
     line-height: 1.25;
     margin-bottom: 6px;
   }}
@@ -953,7 +953,7 @@ st.markdown(
 
 # NEW subtitle (requested)
 st.markdown(
-    "<div class='subtitle'>Estimation of uniform corrosion thickness loss of buried steel pile using multiple standards abd probablistic ML model</div>",
+    "<div class='subtitle'>Estimation of uniform corrosion thickness loss of buried steel pile using multiple standards and probablistic ML model</div>",
     unsafe_allow_html=True,
 )
 
