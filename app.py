@@ -940,6 +940,16 @@ st.markdown(
   .katex-display {{
     margin: 0.4em 0 0.2em 0 !important;
   }}
+
+    /* Tabs: increase font size */
+  div[data-baseweb="tab-list"] button,
+  div[role="tablist"] button,
+  button[role="tab"] {
+    font-size: 22px !important;
+    font-weight: 800 !important;
+    padding: 10px 18px !important;
+  }
+  
 </style>
 """,
     unsafe_allow_html=True,
