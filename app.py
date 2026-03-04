@@ -1480,7 +1480,7 @@ with tab1:
 # ============================================================
 with tab2:
     st.markdown("<div class='sectiontitle'>Input Parameters</div>", unsafe_allow_html=True)
-    st.markdown("<div class='sectionnote'>Inputs are prefilled from Tab 1. Age is required; Temperature can be NA (default 10°C). Up to two ML features can be NA (imputed by kNN).</div>", unsafe_allow_html=True)
+    st.markdown("<div class='sectionnote'>Inputs are prefilled from Tab 1. Up to two unknowns allowed to be imputed by kNN.</div>", unsafe_allow_html=True)
 
     left, right = st.columns([2.4, 1.1], gap="large")
 
