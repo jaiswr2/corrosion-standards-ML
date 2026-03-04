@@ -877,7 +877,7 @@ st.markdown(
 
   .sectiontitle {{
     color: {MCMAROON};
-    font-size: 34px;
+    font-size: 30px;
     font-weight: 900;
     margin-top: 10px;
     margin-bottom: 0px;
@@ -945,10 +945,10 @@ st.markdown(
   div[data-baseweb="tab-list"] button,
   div[data-baseweb="tab-list"] button * {{
     font-size: 34px !important;
-    font-weight: 500 !important;
+    font-weight: 600 !important;
     line-height: 1.2 !important;
-    margin-top: 14px;     /* space BEFORE */
-    margin-bottom: 18px;  /* space AFTER */
+    margin-top: 24px;     /* space BEFORE */
+    margin-bottom: 10px;  /* space AFTER */
   }}
 
   div[data-baseweb="tab-list"] button {{
