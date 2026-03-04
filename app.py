@@ -950,11 +950,7 @@ st.markdown(
     "<div class='title'>Predicting corrosion-induced thickness loss in buried steel pile</div>",
     unsafe_allow_html=True,
 )
-st.markdown(
-    "<div class='subtitle'>Estimate soil aggressiveness factor k using ML and propagate Thickness Loss using Monte Carlo simulations:</div>",
-    unsafe_allow_html=True,
-)
-st.latex(r"TL(t,T)=k\, t^n \exp\left[\beta\,(T-T_0)\right]")
+
 
 prep, gpr, meta = load_artifacts()
 expected_cols = meta["expected_raw_columns"]
@@ -1031,7 +1027,7 @@ def select_input_no_label(value_key, options, default_idx=0, disabled=False):
 # =========================
 # Tabs
 # =========================
-tab1, tab2 = st.tabs(["Design Standards + ML", "ML + Detailed ML + Monte Carlo"])
+tab1, tab2 = st.tabs(["Design Standards + ML", "Detailed ML + Monte Carlo"])
 
 
 # ============================================================
