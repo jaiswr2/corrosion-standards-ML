@@ -941,15 +941,17 @@ st.markdown(
     margin: 0.4em 0 0.2em 0 !important;
   }}
 
-    /* Tabs: increase font size */
-  div[data-baseweb="tab-list"] button,
-  div[role="tablist"] button,
-  button[role="tab"] {{
-    font-size: 54px !important;   /* <-- increase this */
-    font-weight: 900 !important;
-    padding: 14px 22px !important; /* optional: makes tab look proportional */
-    line-height: 1.1 !important;   /* optional: tighter vertical fit */
-  }}
+/* Tabs: increase font size (robust across Streamlit versions) */
+div[data-baseweb="tab-list"] button,
+div[data-baseweb="tab-list"] button * {
+  font-size: 54px !important;
+  font-weight: 900 !important;
+  line-height: 1.1 !important;
+}
+
+div[data-baseweb="tab-list"] button {
+  padding: 14px 22px !important;
+}
   
 </style>
 """,
