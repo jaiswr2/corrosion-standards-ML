@@ -1031,7 +1031,7 @@ def select_input_no_label(value_key, options, default_idx=0, disabled=False):
 # =========================
 # Tabs
 # =========================
-tab1, tab2 = st.tabs(["Design Standards + ML (Mean)", "ML + Monte Carlo (Detailed)"])
+tab1, tab2 = st.tabs(["Design Standards + ML", "ML + Detailed ML + Monte Carlo"])
 
 
 # ============================================================
@@ -1039,7 +1039,7 @@ tab1, tab2 = st.tabs(["Design Standards + ML (Mean)", "ML + Monte Carlo (Detaile
 # ============================================================
 with tab1:
     st.markdown("<div class='sectiontitle'>Input Parameters</div>", unsafe_allow_html=True)
-    st.markdown("<div class='sectionnote'>Age and Temperature are required (Temperature can be NA → default 10°C). Up to two ML features can be NA (imputed by kNN).</div>", unsafe_allow_html=True)
+    st.markdown("<div class='sectionnote'>Up to two unknowns allowed to be imputed by kNN.</div>", unsafe_allow_html=True)
 
     left, right = st.columns([2.4, 1.1], gap="large")
 
