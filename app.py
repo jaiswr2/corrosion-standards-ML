@@ -944,8 +944,8 @@ st.markdown(
   /* Tabs: increase font size (robust) */
   div[data-baseweb="tab-list"] button,
   div[data-baseweb="tab-list"] button * {{
-    font-size: 54px !important;
-    font-weight: 900 !important;
+    font-size: 34px !important;
+    font-weight: 400 !important;
     line-height: 1.1 !important;
   }}
 
