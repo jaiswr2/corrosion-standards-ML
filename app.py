@@ -858,7 +858,7 @@ st.set_page_config(page_title="Predicting corrosion-induced thickness loss", lay
 st.markdown(
     f"""
 <style>
-  .stApp {{ font-size: 40px; }}
+  .stApp {{ font-size: 60px; }}
 
   .title {{
     color: {MCMAROON};
