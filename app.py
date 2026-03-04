@@ -951,6 +951,11 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+# NEW subtitle (requested)
+st.markdown(
+    "<div class='subtitle'>Estimation of uniform corrosion thickness loss of buried steel pile using multiple standards abd probablistic ML model</div>",
+    unsafe_allow_html=True,
+)
 
 prep, gpr, meta = load_artifacts()
 expected_cols = meta["expected_raw_columns"]
@@ -1037,7 +1042,8 @@ with tab1:
     st.markdown("<div class='sectiontitle'>Input Parameters</div>", unsafe_allow_html=True)
     st.markdown("<div class='sectionnote'>Up to two unknowns allowed to be imputed by kNN.</div>", unsafe_allow_html=True)
 
-    left, right = st.columns([2.4, 1.1], gap="large")
+    # CHANGED: remove 3rd column (Tab 1 Settings) -> single input column
+    left = st.container()
 
     with st.form("form_tab1"):
         # Input box
@@ -1071,9 +1077,19 @@ with tab1:
                     temp_na = checkbox_unknown("tab1_temp_na", default=bool(st.session_state["temp_is_na"]))
                     if temp_na:
                         T_used = float(T0_meta)
-                        _ = num_input_no_label("tab1_temp", -50.0, 60.0, float(T0_meta), STEPS["Temperature (°C)"], disabled=True)
+                        _ = num_input_no_label(
+                            "tab1_temp", -50.0, 60.0, float(T0_meta), STEPS["Temperature (°C)"], disabled=True
+                        )
                     else:
-                        T_used = float(num_input_no_label("tab1_temp", -50.0, 60.0, float(st.session_state["Temperature (°C)"]), STEPS["Temperature (°C)"]))
+                        T_used = float(
+                            num_input_no_label(
+                                "tab1_temp",
+                                -50.0,
+                                60.0,
+                                float(st.session_state["Temperature (°C)"]),
+                                STEPS["Temperature (°C)"],
+                            )
+                        )
                     # update shared
                     st.session_state["temp_is_na"] = bool(temp_na)
                     st.session_state["Temperature (°C)"] = float(T_used)
@@ -1087,10 +1103,14 @@ with tab1:
                     na = checkbox_unknown("tab1_na_Soil_pH", default=bool(st.session_state["na_Soil_pH"]))
                     st.session_state["na_Soil_pH"] = bool(na)
                     if na:
-                        _ = num_input_no_label("tab1_Soil_pH", *RANGES["Soil_pH"], float(st.session_state["Soil_pH"]), STEPS["Soil_pH"], disabled=True)
+                        _ = num_input_no_label(
+                            "tab1_Soil_pH", *RANGES["Soil_pH"], float(st.session_state["Soil_pH"]), STEPS["Soil_pH"], disabled=True
+                        )
                         user_row_ml["Soil_pH"] = np.nan
                     else:
-                        v = float(num_input_no_label("tab1_Soil_pH", *RANGES["Soil_pH"], float(st.session_state["Soil_pH"]), STEPS["Soil_pH"]))
+                        v = float(
+                            num_input_no_label("tab1_Soil_pH", *RANGES["Soil_pH"], float(st.session_state["Soil_pH"]), STEPS["Soil_pH"])
+                        )
                         st.session_state["Soil_pH"] = v
                         user_row_ml["Soil_pH"] = v
 
@@ -1100,10 +1120,23 @@ with tab1:
                     na = checkbox_unknown("tab1_na_Chloride", default=bool(st.session_state["na_Chloride"]))
                     st.session_state["na_Chloride"] = bool(na)
                     if na:
-                        _ = num_input_no_label("tab1_Chloride", *RANGES["Chloride Content (mg/kg)"], float(st.session_state["Chloride Content (mg/kg)"]), STEPS["Chloride Content (mg/kg)"], disabled=True)
+                        _ = num_input_no_label(
+                            "tab1_Chloride",
+                            *RANGES["Chloride Content (mg/kg)"],
+                            float(st.session_state["Chloride Content (mg/kg)"]),
+                            STEPS["Chloride Content (mg/kg)"],
+                            disabled=True,
+                        )
                         user_row_ml["Chloride Content (mg/kg)"] = np.nan
                     else:
-                        v = float(num_input_no_label("tab1_Chloride", *RANGES["Chloride Content (mg/kg)"], float(st.session_state["Chloride Content (mg/kg)"]), STEPS["Chloride Content (mg/kg)"]))
+                        v = float(
+                            num_input_no_label(
+                                "tab1_Chloride",
+                                *RANGES["Chloride Content (mg/kg)"],
+                                float(st.session_state["Chloride Content (mg/kg)"]),
+                                STEPS["Chloride Content (mg/kg)"],
+                            )
+                        )
                         st.session_state["Chloride Content (mg/kg)"] = v
                         user_row_ml["Chloride Content (mg/kg)"] = v
 
@@ -1113,10 +1146,23 @@ with tab1:
                     na = checkbox_unknown("tab1_na_Resistivity", default=bool(st.session_state["na_Resistivity"]))
                     st.session_state["na_Resistivity"] = bool(na)
                     if na:
-                        _ = num_input_no_label("tab1_Resistivity", *RANGES["Soil_Resistivity (Ω·cm)"], float(st.session_state["Soil_Resistivity (Ω·cm)"]), STEPS["Soil_Resistivity (Ω·cm)"], disabled=True)
+                        _ = num_input_no_label(
+                            "tab1_Resistivity",
+                            *RANGES["Soil_Resistivity (Ω·cm)"],
+                            float(st.session_state["Soil_Resistivity (Ω·cm)"]),
+                            STEPS["Soil_Resistivity (Ω·cm)"],
+                            disabled=True,
+                        )
                         user_row_ml["Soil_Resistivity (Ω·cm)"] = np.nan
                     else:
-                        v = float(num_input_no_label("tab1_Resistivity", *RANGES["Soil_Resistivity (Ω·cm)"], float(st.session_state["Soil_Resistivity (Ω·cm)"]), STEPS["Soil_Resistivity (Ω·cm)"]))
+                        v = float(
+                            num_input_no_label(
+                                "tab1_Resistivity",
+                                *RANGES["Soil_Resistivity (Ω·cm)"],
+                                float(st.session_state["Soil_Resistivity (Ω·cm)"]),
+                                STEPS["Soil_Resistivity (Ω·cm)"],
+                            )
+                        )
                         st.session_state["Soil_Resistivity (Ω·cm)"] = v
                         user_row_ml["Soil_Resistivity (Ω·cm)"] = v
 
@@ -1126,10 +1172,23 @@ with tab1:
                     na = checkbox_unknown("tab1_na_Sulphate", default=bool(st.session_state["na_Sulphate"]))
                     st.session_state["na_Sulphate"] = bool(na)
                     if na:
-                        _ = num_input_no_label("tab1_Sulphate", *RANGES["Sulphate_Content (mg/kg)"], float(st.session_state["Sulphate_Content (mg/kg)"]), STEPS["Sulphate_Content (mg/kg)"], disabled=True)
+                        _ = num_input_no_label(
+                            "tab1_Sulphate",
+                            *RANGES["Sulphate_Content (mg/kg)"],
+                            float(st.session_state["Sulphate_Content (mg/kg)"]),
+                            STEPS["Sulphate_Content (mg/kg)"],
+                            disabled=True,
+                        )
                         user_row_ml["Sulphate_Content (mg/kg)"] = np.nan
                     else:
-                        v = float(num_input_no_label("tab1_Sulphate", *RANGES["Sulphate_Content (mg/kg)"], float(st.session_state["Sulphate_Content (mg/kg)"]), STEPS["Sulphate_Content (mg/kg)"]))
+                        v = float(
+                            num_input_no_label(
+                                "tab1_Sulphate",
+                                *RANGES["Sulphate_Content (mg/kg)"],
+                                float(st.session_state["Sulphate_Content (mg/kg)"]),
+                                STEPS["Sulphate_Content (mg/kg)"],
+                            )
+                        )
                         st.session_state["Sulphate_Content (mg/kg)"] = v
                         user_row_ml["Sulphate_Content (mg/kg)"] = v
 
@@ -1139,10 +1198,23 @@ with tab1:
                     na = checkbox_unknown("tab1_na_Moisture", default=bool(st.session_state["na_Moisture"]))
                     st.session_state["na_Moisture"] = bool(na)
                     if na:
-                        _ = num_input_no_label("tab1_Moisture", *RANGES["Moisture_Content (%)"], float(st.session_state["Moisture_Content (%)"]), STEPS["Moisture_Content (%)"], disabled=True)
+                        _ = num_input_no_label(
+                            "tab1_Moisture",
+                            *RANGES["Moisture_Content (%)"],
+                            float(st.session_state["Moisture_Content (%)"]),
+                            STEPS["Moisture_Content (%)"],
+                            disabled=True,
+                        )
                         user_row_ml["Moisture_Content (%)"] = np.nan
                     else:
-                        v = float(num_input_no_label("tab1_Moisture", *RANGES["Moisture_Content (%)"], float(st.session_state["Moisture_Content (%)"]), STEPS["Moisture_Content (%)"]))
+                        v = float(
+                            num_input_no_label(
+                                "tab1_Moisture",
+                                *RANGES["Moisture_Content (%)"],
+                                float(st.session_state["Moisture_Content (%)"]),
+                                STEPS["Moisture_Content (%)"],
+                            )
+                        )
                         st.session_state["Moisture_Content (%)"] = v
                         user_row_ml["Moisture_Content (%)"] = v
 
@@ -1152,10 +1224,19 @@ with tab1:
                     na = checkbox_unknown("tab1_na_SoilType", default=bool(st.session_state["na_SoilType"]))
                     st.session_state["na_SoilType"] = bool(na)
                     if na:
-                        _ = select_input_no_label("tab1_SoilType", SOIL_TYPES, default_idx=SOIL_TYPES.index(st.session_state["Soil Type"]) if st.session_state["Soil Type"] in SOIL_TYPES else 1, disabled=True)
+                        _ = select_input_no_label(
+                            "tab1_SoilType",
+                            SOIL_TYPES,
+                            default_idx=SOIL_TYPES.index(st.session_state["Soil Type"]) if st.session_state["Soil Type"] in SOIL_TYPES else 1,
+                            disabled=True,
+                        )
                         user_row_ml["Soil Type"] = np.nan
                     else:
-                        v = select_input_no_label("tab1_SoilType", SOIL_TYPES, default_idx=SOIL_TYPES.index(st.session_state["Soil Type"]) if st.session_state["Soil Type"] in SOIL_TYPES else 1)
+                        v = select_input_no_label(
+                            "tab1_SoilType",
+                            SOIL_TYPES,
+                            default_idx=SOIL_TYPES.index(st.session_state["Soil Type"]) if st.session_state["Soil Type"] in SOIL_TYPES else 1,
+                        )
                         st.session_state["Soil Type"] = v
                         user_row_ml["Soil Type"] = v
 
@@ -1165,10 +1246,23 @@ with tab1:
                     na = checkbox_unknown("tab1_na_WT", default=bool(st.session_state["na_WT"]))
                     st.session_state["na_WT"] = bool(na)
                     if na:
-                        _ = select_input_no_label("tab1_WT", WATER_TABLE, default_idx=WATER_TABLE.index(st.session_state["Location wrt Water Table"]) if st.session_state["Location wrt Water Table"] in WATER_TABLE else 0, disabled=True)
+                        _ = select_input_no_label(
+                            "tab1_WT",
+                            WATER_TABLE,
+                            default_idx=WATER_TABLE.index(st.session_state["Location wrt Water Table"])
+                            if st.session_state["Location wrt Water Table"] in WATER_TABLE
+                            else 0,
+                            disabled=True,
+                        )
                         user_row_ml["Location wrt Water Table"] = np.nan
                     else:
-                        v = select_input_no_label("tab1_WT", WATER_TABLE, default_idx=WATER_TABLE.index(st.session_state["Location wrt Water Table"]) if st.session_state["Location wrt Water Table"] in WATER_TABLE else 0)
+                        v = select_input_no_label(
+                            "tab1_WT",
+                            WATER_TABLE,
+                            default_idx=WATER_TABLE.index(st.session_state["Location wrt Water Table"])
+                            if st.session_state["Location wrt Water Table"] in WATER_TABLE
+                            else 0,
+                        )
                         st.session_state["Location wrt Water Table"] = v
                         user_row_ml["Location wrt Water Table"] = v
 
@@ -1178,10 +1272,23 @@ with tab1:
                     na = checkbox_unknown("tab1_na_Foreign", default=bool(st.session_state["na_Foreign"]))
                     st.session_state["na_Foreign"] = bool(na)
                     if na:
-                        _ = select_input_no_label("tab1_Foreign", FOREIGN_INCL, default_idx=FOREIGN_INCL.index(st.session_state["Foreign_Inclusion_Type"]) if st.session_state["Foreign_Inclusion_Type"] in FOREIGN_INCL else 0, disabled=True)
+                        _ = select_input_no_label(
+                            "tab1_Foreign",
+                            FOREIGN_INCL,
+                            default_idx=FOREIGN_INCL.index(st.session_state["Foreign_Inclusion_Type"])
+                            if st.session_state["Foreign_Inclusion_Type"] in FOREIGN_INCL
+                            else 0,
+                            disabled=True,
+                        )
                         user_row_ml["Foreign_Inclusion_Type"] = np.nan
                     else:
-                        v = select_input_no_label("tab1_Foreign", FOREIGN_INCL, default_idx=FOREIGN_INCL.index(st.session_state["Foreign_Inclusion_Type"]) if st.session_state["Foreign_Inclusion_Type"] in FOREIGN_INCL else 0)
+                        v = select_input_no_label(
+                            "tab1_Foreign",
+                            FOREIGN_INCL,
+                            default_idx=FOREIGN_INCL.index(st.session_state["Foreign_Inclusion_Type"])
+                            if st.session_state["Foreign_Inclusion_Type"] in FOREIGN_INCL
+                            else 0,
+                        )
                         st.session_state["Foreign_Inclusion_Type"] = v
                         user_row_ml["Foreign_Inclusion_Type"] = v
 
@@ -1194,22 +1301,15 @@ with tab1:
                         _ = select_input_no_label("tab1_Fill", FILL_MATERIAL, default_idx=0, disabled=True)
                         user_row_ml["Is_Fill_Material"] = np.nan
                     else:
-                        v = select_input_no_label("tab1_Fill", FILL_MATERIAL, default_idx=FILL_MATERIAL.index(st.session_state["Is_Fill_Material"]) if st.session_state["Is_Fill_Material"] in FILL_MATERIAL else 0)
+                        v = select_input_no_label(
+                            "tab1_Fill",
+                            FILL_MATERIAL,
+                            default_idx=FILL_MATERIAL.index(st.session_state["Is_Fill_Material"])
+                            if st.session_state["Is_Fill_Material"] in FILL_MATERIAL
+                            else 0,
+                        )
                         st.session_state["Is_Fill_Material"] = int(v)
                         user_row_ml["Is_Fill_Material"] = int(v)
-
-        # Right box: fixed settings note
-        with right:
-            try:
-                boxr = st.container(border=True)
-            except TypeError:
-                boxr = st.container()
-            with boxr:
-                st.markdown(f"<div class='sectiontitle' style='margin-top:0;'>Tab 1 Settings</div>", unsafe_allow_html=True)
-                st.markdown(
-                    "<div class='sectionnote' style='margin-bottom:10px;'>MC settings are fixed here (mean-only): Ns=5000, n∈[0.40,0.70], β∈[0.020,0.040], shared=False.</div>",
-                    unsafe_allow_html=True,
-                )
 
         run1 = st.form_submit_button("Run standards + ML (mean)")
 
@@ -1287,19 +1387,17 @@ with tab1:
             rows.append(
                 {
                     "Method": DISPLAY_NAMES.get(key, key),
-                    "Corrosion Rate (mm/yr)": rate,
                     f"Thickness Loss at {age_val} yr (mm)": loss,
                     "Note": notes.get(key, ""),
                 }
             )
 
-        # Add ML as a "method" row (thickness loss only; no corrosion rate)
+        # Add ML as a "method" row (thickness loss only)
         rows.append(
             {
-                "Method": "ML (GPR k → MC TL mean)",
-                "Corrosion Rate (mm/yr)": np.nan,
+                "Method": "Machine Learning (Mean Value)",
                 f"Thickness Loss at {age_val} yr (mm)": ml_TL_mean,
-                "Note": f"μ_k={mu_k:.6f}, σ_k={sd_k:.6f}; MC mean TL with fixed settings.",
+                "Note": "",
             }
         )
 
@@ -1310,22 +1408,9 @@ with tab1:
         out_left, out_right = st.columns([1.15, 1.0], gap="large")
 
         with out_left:
-            st.markdown("<div class='outline'><b>ML prediction (k)</b></div>", unsafe_allow_html=True)
-            st.latex(rf"\mu_k={mu_k:.6f}\qquad \sigma_k={sd_k:.6f}")
-            st.markdown(
-                f"<div class='outline'><b>ML mean thickness loss at age {age_val} yr (fixed MC)</b></div>",
-                unsafe_allow_html=True,
-            )
-            st.latex(rf"\overline{{TL}}({age_val})={ml_TL_mean:.3f}\ \text{{mm}}")
-
-            st.markdown("<div class='outline'><b>Design standards + ML summary</b></div>", unsafe_allow_html=True)
+            # CHANGED: directly show table (no ML k lines, no ML TL text)
             st.dataframe(
-                df_out.style.format(
-                    {
-                        "Corrosion Rate (mm/yr)": "{:.4f}",
-                        f"Thickness Loss at {age_val} yr (mm)": "{:.3f}",
-                    }
-                ),
+                df_out.style.format({f"Thickness Loss at {age_val} yr (mm)": "{:.3f}"}),
                 use_container_width=True,
                 hide_index=True,
             )
@@ -1355,7 +1440,6 @@ with tab1:
                 "ML",
             ]
 
-            # Colors
             colors = [
                 STANDARD_COLORS.get("CSA_S6"),
                 STANDARD_COLORS.get("Eurocode"),
