@@ -945,8 +945,8 @@ st.markdown(
   div[data-baseweb="tab-list"] button,
   div[data-baseweb="tab-list"] button * {{
     font-size: 34px !important;
-    font-weight: 400 !important;
-    line-height: 1.1 !important;
+    font-weight: 500 !important;
+    line-height: 1.2 !important;
   }}
 
   div[data-baseweb="tab-list"] button {{
