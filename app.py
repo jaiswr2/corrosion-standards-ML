@@ -945,9 +945,10 @@ st.markdown(
   div[data-baseweb="tab-list"] button,
   div[role="tablist"] button,
   button[role="tab"] {{
-    font-size: 42px !important;
+    font-size: 54px !important;   /* <-- increase this */
     font-weight: 900 !important;
-    padding: 10px 18px !important;
+    padding: 14px 22px !important; /* optional: makes tab look proportional */
+    line-height: 1.1 !important;   /* optional: tighter vertical fit */
   }}
   
 </style>
