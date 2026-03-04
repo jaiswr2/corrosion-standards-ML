@@ -944,11 +944,11 @@ st.markdown(
     /* Tabs: increase font size */
   div[data-baseweb="tab-list"] button,
   div[role="tablist"] button,
-  button[role="tab"] {
+  button[role="tab"] {{
     font-size: 22px !important;
     font-weight: 800 !important;
     padding: 10px 18px !important;
-  }
+  }}
   
 </style>
 """,
