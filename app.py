@@ -1,7 +1,7 @@
 # app.py
 # Streamlit app with two tabs:
-#   Tab 1: Design Standards + ML (mean-only MC with fixed defaults)
-#   Tab 2: ML + Monte Carlo (detailed)
+#   Tab 1: Design Standards + ML
+#   Tab 2: Detailed ML + Monte Carlo
 #
 # Artifacts expected in repo:
 #   artifacts_gpr_k/preprocessor_fitted.joblib
@@ -21,9 +21,9 @@ import streamlit as st
 from matplotlib.ticker import FormatStrFormatter
 
 
-# =========================
+# ============================================================
 # CONFIG / THEME
-# =========================
+# ============================================================
 ARTIFACT_DIR = Path(__file__).parent / "artifacts_gpr_k"
 PREP_PATH = ARTIFACT_DIR / "preprocessor_fitted.joblib"
 MODEL_PATH = ARTIFACT_DIR / "gpr_k_model.joblib"
@@ -32,15 +32,15 @@ META_PATH = ARTIFACT_DIR / "metadata.json"
 EPS = 1e-12
 MC_NS_DEFAULT = 5000
 
-# McMaster theme
 MCMAROON = "#7A003C"
 MCYELLOW = "#FDB515"
 LABELBLUE = "#1f5fbf"
 BLACKTXT = "#111111"
 
 FMT = FormatStrFormatter("%g")
+PLOT_MEAN = "cornflowerblue"
+PLOT_BAND = "deeppink"
 
-# ML feature ranges (for input bounds)
 RANGES = {
     "Soil_pH": (3.0, 10.0),
     "Chloride Content (mg/kg)": (0.3, 11400.0),
@@ -60,15 +60,27 @@ STEPS = {
 
 SOIL_TYPES = ["GT", "CL", "SM", "ML", "SP", "CH", "GP", "SW", "OL", "SC"]
 WATER_TABLE = ["Above WaterTable", "Fluctuation Zone", "Permanent Immersion"]
-FOREIGN_INCL = ["None", "Shreded wood", "Cinder", "Flyash"]  # keep spelling consistent with training
+FOREIGN_INCL = ["None", "Shreded wood", "Cinder", "Flyash"]
 FILL_MATERIAL = [0, 1]
 
 AGES_HORIZON = [10, 30, 50, 70, 80]
 
+UI_ML_COLS = [
+    "Soil_pH",
+    "Chloride Content (mg/kg)",
+    "Soil_Resistivity (Ω·cm)",
+    "Sulphate_Content (mg/kg)",
+    "Moisture_Content (%)",
+    "Soil Type",
+    "Location wrt Water Table",
+    "Foreign_Inclusion_Type",
+    "Is_Fill_Material",
+]
 
-# =========================
+
+# ============================================================
 # LOAD ARTIFACTS
-# =========================
+# ============================================================
 @st.cache_resource
 def load_artifacts():
     missing = [p for p in [PREP_PATH, MODEL_PATH, META_PATH] if not p.exists()]
@@ -83,9 +95,9 @@ def load_artifacts():
     return prep, gpr, meta
 
 
-# =========================
+# ============================================================
 # COMMON HELPERS
-# =========================
+# ============================================================
 def fig_to_png_bytes(fig):
     buf = BytesIO()
     fig.savefig(buf, format="png", dpi=300, bbox_inches="tight")
@@ -93,13 +105,9 @@ def fig_to_png_bytes(fig):
     return buf.getvalue()
 
 
-def fmt_ci(lo, hi, nd=3):
-    return f"{lo:.{nd}f} – {hi:.{nd}f}"
-
-
-def count_missing_ml_features(row_dict, expected_cols):
+def count_missing_ml_features(row_dict, cols):
     miss = 0
-    for c in expected_cols:
+    for c in cols:
         v = row_dict.get(c, None)
         if v is None:
             miss += 1
@@ -109,8 +117,9 @@ def count_missing_ml_features(row_dict, expected_cols):
 
 
 def derive_foreign_flag(foreign_type_value) -> int:
-    """No separate toggle. If Foreign_Inclusion_Type != 'None', treat as foreign inclusion present."""
     if foreign_type_value is None:
+        return 0
+    if isinstance(foreign_type_value, float) and np.isnan(foreign_type_value):
         return 0
     try:
         s = str(foreign_type_value).strip().lower()
@@ -119,9 +128,69 @@ def derive_foreign_flag(foreign_type_value) -> int:
     return 0 if s == "none" else 1
 
 
-# =========================
-# MONTE CARLO HELPERS (ML)
-# =========================
+def feature_header(text: str):
+    st.markdown(f"<div class='feat'>{text}</div>", unsafe_allow_html=True)
+
+
+def checkbox_unknown(key, default=False, disabled=False):
+    return st.checkbox("Unknown (NA)", value=default, key=key, disabled=disabled)
+
+
+def num_input_no_label(value_key, minv, maxv, default, step, disabled=False):
+    return st.number_input(
+        label="",
+        value=float(default),
+        min_value=float(minv),
+        max_value=float(maxv),
+        step=float(step),
+        key=value_key,
+        disabled=disabled,
+        label_visibility="collapsed",
+    )
+
+
+def select_input_no_label(value_key, options, default_idx=0, disabled=False):
+    return st.selectbox(
+        label="",
+        options=options,
+        index=default_idx,
+        key=value_key,
+        disabled=disabled,
+        label_visibility="collapsed",
+    )
+
+
+def build_ml_input_df(user_row, expected_cols):
+    x_in = pd.DataFrame([{
+        "pH": user_row.get("Soil_pH", np.nan),
+        "Chloride (mg/kg)": user_row.get("Chloride Content (mg/kg)", np.nan),
+        "Resistivity (Ω·cm)": user_row.get("Soil_Resistivity (Ω·cm)", np.nan),
+        "Sulphate (mg/kg)": user_row.get("Sulphate_Content (mg/kg)", np.nan),
+        "Moisture (%)": user_row.get("Moisture_Content (%)", np.nan),
+        "Soil Type": user_row.get("Soil Type", np.nan),
+        "Location wrt WaterTable": user_row.get("Location wrt Water Table", np.nan),
+        "Foreign Inclusion": user_row.get("Foreign_Inclusion_Type", np.nan),
+        "Fill Material": user_row.get("Is_Fill_Material", np.nan),
+    }])
+    return x_in.reindex(columns=expected_cols)
+
+
+def predict_ml_k(user_row, prep, gpr, expected_cols):
+    x_in = build_ml_input_df(user_row, expected_cols)
+    x_tr = prep.transform(x_in)
+    mu_k_arr, sd_k_arr = gpr.predict(np.asarray(x_tr, float), return_std=True)
+    mu_k = float(mu_k_arr[0])
+    sd_k = float(max(sd_k_arr[0], EPS))
+    return mu_k, sd_k
+
+
+def ensure_age_in_horizon(age_now, horizon):
+    return sorted(set([int(a) for a in horizon] + [int(age_now)]))
+
+
+# ============================================================
+# MONTE CARLO
+# ============================================================
 def rtruncnorm(mean, sd, low, high, size, seed=42, max_iter=5_000_000):
     rng = np.random.default_rng(seed)
     out = np.empty(size, dtype=float)
@@ -133,7 +202,7 @@ def rtruncnorm(mean, sd, low, high, size, seed=42, max_iter=5_000_000):
         draw = draw[(draw >= low) & (draw <= high)]
         k = len(draw)
         if k > 0:
-            out[filled : filled + k] = draw[:k]
+            out[filled:filled + k] = draw[:k]
             filled += k
         it += batch
         if it > max_iter:
@@ -156,11 +225,11 @@ def mc_TL_from_k(
     shared_n_beta=False,
 ):
     """
-    k ~ Normal(mu_k, sd_k). Clip k at EPS to keep TL physical.
-    n, beta ~ TruncNormal using bounds as ~95% interval.
     TL = k * t^n * exp(beta*(T - T0))
 
-    Returns DataFrame with Mean_TL, TL_sd and CI bounds.
+    Output:
+      mean + quantiles
+      Q05, Q25, Q75, Q95
     """
     rng = np.random.default_rng(seed)
     mu_k = float(mu_k)
@@ -174,49 +243,40 @@ def mc_TL_from_k(
     ages = np.asarray(ages, float)
     out_rows = []
 
+    if shared_n_beta:
+        n_shared = rtruncnorm(mu_n, sigma_n, nL, nU, Ns, seed=seed + 1)
+        b_shared = rtruncnorm(mu_beta, sigma_beta, bL, bU, Ns, seed=seed + 2)
+
     for t_age in ages:
         z = rng.standard_normal(Ns)
         k_s = np.maximum(mu_k + sd_k * z, EPS)
 
         if shared_n_beta:
-            n_draw = rtruncnorm(mu_n, sigma_n, nL, nU, Ns, seed=seed + 1)
-            b_draw = rtruncnorm(mu_beta, sigma_beta, bL, bU, Ns, seed=seed + 2)
+            n_draw = n_shared
+            b_draw = b_shared
         else:
-            # still independent draws (same sizes); kept for parity with your prior code
-            n_draw = rtruncnorm(mu_n, sigma_n, nL, nU, Ns, seed=seed + 1)
-            b_draw = rtruncnorm(mu_beta, sigma_beta, bL, bU, Ns, seed=seed + 2)
+            n_draw = rtruncnorm(mu_n, sigma_n, nL, nU, Ns, seed=seed + 1000 + int(t_age))
+            b_draw = rtruncnorm(mu_beta, sigma_beta, bL, bU, Ns, seed=seed + 2000 + int(t_age))
 
         time_fac = np.power(max(float(t_age), EPS), n_draw)
         temp_fac = np.exp(b_draw * (float(T_used) - float(T0)))
-        TL_s = k_s * time_fac * temp_fac
+        tl_s = k_s * time_fac * temp_fac
 
-        TL_mean = float(np.mean(TL_s))
-        TL_sd = float(np.std(TL_s, ddof=1))
-
-        lo68 = max(TL_mean - TL_sd, 0.0)
-        hi68 = TL_mean + TL_sd
-        lo95 = max(TL_mean - 2.0 * TL_sd, 0.0)
-        hi95 = TL_mean + 2.0 * TL_sd
-
-        out_rows.append(
-            {
-                "Age": int(t_age),
-                "Mean_TL (mm)": TL_mean,
-                "TL_sd (mm)": TL_sd,
-                "TL_lo68 (mm)": lo68,
-                "TL_hi68 (mm)": hi68,
-                "TL_lo95 (mm)": lo95,
-                "TL_hi95 (mm)": hi95,
-            }
-        )
+        out_rows.append({
+            "Age": int(t_age),
+            "Mean Thickness loss (mm)": float(np.mean(tl_s)),
+            "Q05 Thickness loss (mm)": float(np.quantile(tl_s, 0.05)),
+            "Q25 Thickness loss (mm)": float(np.quantile(tl_s, 0.25)),
+            "Q75 Thickness loss (mm)": float(np.quantile(tl_s, 0.75)),
+            "Q95 Thickness loss (mm)": float(np.quantile(tl_s, 0.95)),
+        })
 
     return pd.DataFrame(out_rows)
 
 
-# =========================
-# DESIGN STANDARDS (CODE-BASED)
-# NOTE: reusing your logic; we add CSA S6 (2025)
-# =========================
+# ============================================================
+# DESIGN STANDARDS
+# ============================================================
 REL_TOL = 0.20
 
 STANDARD_KEYS = [
@@ -271,12 +331,12 @@ STANDARD_COLORS = {
     "Caltrans": "#56B4E9",
 }
 
-# conceptual input names used by standard functions
 COL_AGE = "Age (yr)"
 COL_PH = "Soil_pH"
 COL_CL = "Chloride Content (mg/kg)"
 COL_SO4 = "Sulphate_Content (mg/kg)"
 COL_RHO = "Soil_Resistivity (Ω·cm)"
+COL_MOIST = "Moisture_Content (%)"
 COL_SOIL = "Soil Type"
 COL_LOC = "Location wrt Water Table"
 COL_FILL = "Is_Fill_Material"
@@ -307,34 +367,20 @@ def truthy01(v):
         return 0
 
 
-# ---------- CSA S6 (2025) ----------
-CSA_NONAGG_RATE = 0.9 / 75.0  # 0.012 mm/yr (linearized)
+# ---------- CSA S6 ----------
+CSA_NONAGG_RATE = 0.9 / 75.0
 
 def csa_s6_classify_and_rate(row):
-    """
-    CSA S6 (2025):
-    Non-aggressive only if ALL satisfied:
-      pH 5-10
-      Chloride <= 100 ppm
-      Resistivity >= 3000 Ω·cm
-      Sulphate <= 200 ppm
-      Organic <= 1% (NOT provided -> assumed PASS)
-    Note: if resistivity >= 5000, chloride + sulphate limits may be waived.
-    Aggressive otherwise -> site-specific assessment (rate = NaN).
-    """
     ph = to_num(row.get(COL_PH))
     cl = to_num(row.get(COL_CL))
     so4 = to_num(row.get(COL_SO4))
     rho = to_num(row.get(COL_RHO))
 
-    organic_pass = True  # per your instruction (assumed)
+    organic_pass = True
     if pd.isna(ph) or pd.isna(rho):
-        # cannot verify -> treat as aggressive
         return "Aggressive (C5–CX)", np.nan, "Insufficient inputs to verify non-aggressive criteria."
 
-    # resistivity waiver for chloride & sulphate
     waiver = (rho >= 5000)
-
     ok_ph = (5.0 <= ph <= 10.0)
     ok_rho = (rho >= 3000.0)
     ok_cl = True if waiver else (pd.notna(cl) and cl <= 100.0)
@@ -376,8 +422,7 @@ def eurocode_class(row):
     return "Undisturbed natural soils"
 
 def predict_eurocode(row):
-    cls = eurocode_class(row)
-    return EC_RATES.get(cls, np.nan)
+    return EC_RATES.get(eurocode_class(row), np.nan)
 
 
 # ---------- AS 2159 ----------
@@ -471,7 +516,6 @@ def classify_as2159_row(row):
 
     phb = pH_bin(to_num(row.get(COL_PH)))
     clb = Cl_bin(to_num(row.get(COL_CL)))
-
     exposure = (BASE_COND_A if cond == "A" else BASE_COND_B).get((phb, clb), "Non-aggressive")
 
     so4 = to_num(row.get(COL_SO4))
@@ -481,8 +525,7 @@ def classify_as2159_row(row):
     return exposure
 
 def predict_as2159(row):
-    cls = classify_as2159_row(row)
-    return AS_RATES.get(cls, np.nan)
+    return AS_RATES.get(classify_as2159_row(row), np.nan)
 
 
 # ---------- NZS ----------
@@ -647,14 +690,13 @@ def predict_china(row):
 CALTRANS_RATES = {
     "Natural Soil": 0.025,
     "Fill/Disturbed": 0.0381,
-    "Highly Corrosive Fill": np.nan,  # site-specific
+    "Highly Corrosive Fill": np.nan,
     "Not Corrosive": 0.0,
 }
 
 def caltrans_classification(row):
     foreign = int(row.get(COL_FOREIGN, 0)) if pd.notna(row.get(COL_FOREIGN, 0)) else 0
     fill = int(row.get(COL_FILL, 0)) if pd.notna(row.get(COL_FILL, 0)) else 0
-
     ph = to_num(row.get(COL_PH))
     cl = to_num(row.get(COL_CL))
     so4 = to_num(row.get(COL_SO4))
@@ -674,7 +716,7 @@ def caltrans_classification(row):
     return "Not Corrosive", CALTRANS_RATES["Not Corrosive"]
 
 def predict_caltrans(row):
-    cls, rate = caltrans_classification(row)
+    _, rate = caltrans_classification(row)
     return rate
 
 
@@ -731,13 +773,12 @@ def z2_from_resistivity_ohm_cm(r):
     r = float(r)
     if r > 50000: return +4
     if r > 20000: return +2
-    if r > 5000:  return 0
-    if r > 2000:  return -2
-    if r > 1000:  return -4
+    if r > 5000: return 0
+    if r > 2000: return -2
+    if r > 1000: return -4
     return -6
 
 def z3_from_moisture(m):
-    # If not provided -> assume <=20% -> Z3=0
     if m is None or (isinstance(m, float) and pd.isna(m)):
         return 0
     return -1 if float(m) > 20.0 else 0
@@ -796,9 +837,8 @@ def predict_din_uniform(row):
     cl = to_num(row.get(COL_CL))
     rho = to_num(row.get(COL_RHO))
     so4 = to_num(row.get(COL_SO4))
+    moisture = to_num(row.get(COL_MOIST))
     loc = row.get(COL_LOC)
-
-    moisture = None  # per your earlier comment; if you want, wire Moisture_Content later
 
     z1 = z1_from_uscs_autoflag(soil_text, explicit_flag=explicit_contam)
     z2 = z2_from_resistivity_ohm_cm(rho)
@@ -824,12 +864,10 @@ def compute_all_standards(row):
     rates = {}
     notes = {}
 
-    # CSA
     csa_cls, csa_rate, csa_note = csa_s6_classify_and_rate(row)
     rates["CSA_S6"] = csa_rate
     notes["CSA_S6"] = f"{csa_cls}. {csa_note}"
 
-    # others
     rates["Eurocode"] = predict_eurocode(row)
     rates["AS2159"] = predict_as2159(row)
     rates["NZS"] = predict_nzs(row)
@@ -849,141 +887,14 @@ def compute_all_standards(row):
     return rates, notes
 
 
-# =========================
-# STREAMLIT UI (TWO TABS)
-# =========================
-st.set_page_config(page_title="Predicting corrosion-induced thickness loss", layout="wide")
-
-# CSS (kept close to your latest style; consistent labels)
-st.markdown(
-    f"""
-<style>
-  .stApp {{ font-size: 60px; }}
-
-  .title {{
-    color: {MCMAROON};
-    font-weight: 900;
-    font-size: 52px;
-    margin-bottom: 6px;
-  }}
-
-  .subtitle {{
-    color: {BLACKTXT};
-    font-size: 20px;
-    font-weight: 300;
-    line-height: 1.25;
-    margin-bottom: 6px;
-  }}
-
-  .sectiontitle {{
-    color: {MCMAROON};
-    font-size: 30px;
-    font-weight: 900;
-    margin-top: 10px;
-    margin-bottom: 0px;
-  }}
-
-  .sectionnote {{
-    color: {BLACKTXT};
-    font-size: 22px;
-    font-weight: 500;
-    margin-top: 4px;
-    margin-bottom: 14px;
-  }}
-
-  .feat {{
-    color: {LABELBLUE};
-    font-weight: 700;
-    font-size: 18px;
-    margin-top: 8px;
-    margin-bottom: 4px;
-  }}
-
-  div[data-testid="stNumberInput"] label,
-  div[data-testid="stSelectbox"] label,
-  div[data-testid="stCheckbox"] label {{
-    font-size: 16px !important;
-    font-weight: 600 !important;
-    color: {BLACKTXT} !important;
-  }}
-
-  div[data-testid="stCheckbox"] p {{
-    font-size: 16px !important;
-  }}
-
-  .stNumberInput input,
-  .stSelectbox div[data-baseweb="select"] {{
-    font-size: 16px !important;
-  }}
-
-  /* Yellow buttons (including form submit buttons) */
-  div.stButton > button,
-  div[data-testid="stFormSubmitButton"] button {{
-    background: {MCYELLOW} !important;
-    border: 2px solid {MCMAROON} !important;
-    color: {MCMAROON} !important;
-    font-weight: 900 !important;
-    font-size: 20px !important;
-    padding: 0.65rem 1.3rem !important;
-    border-radius: 12px !important;
-  }}
-  div.stButton > button:hover,
-  div[data-testid="stFormSubmitButton"] button:hover {{
-    background: #ffd36a !important;
-  }}
-
-  .outline {{
-    font-size: 24px;
-    line-height: 1.35;
-  }}
-
-  .katex-display {{
-    margin: 0.4em 0 0.2em 0 !important;
-  }}
-
-  /* Tabs: increase font size (robust) */
-  div[data-baseweb="tab-list"] button,
-  div[data-baseweb="tab-list"] button * {{
-    font-size: 34px !important;
-    font-weight: 600 !important;
-    line-height: 1.2 !important;
-    margin-top: 24px;     /* space BEFORE */
-    margin-bottom: 10px;  /* space AFTER */
-  }}
-
-  div[data-baseweb="tab-list"] button {{
-    padding: 14px 22px !important;
-  }}
-</style>
-""",
-    unsafe_allow_html=True,
-)
-
-# Header
-st.markdown(
-    "<div class='title'>Predicting corrosion-induced thickness loss in buried steel pile</div>",
-    unsafe_allow_html=True,
-)
-
-# NEW subtitle (requested)
-st.markdown(
-    "<div class='subtitle'>Estimation of uniform corrosion thickness loss of buried steel pile using multiple standards and probablistic ML model</div>",
-    unsafe_allow_html=True,
-)
-
-prep, gpr, meta = load_artifacts()
-expected_cols = meta["expected_raw_columns"]
-T0_meta = float(meta["constants"]["T0"])
-mu_n_meta = float(meta["constants"]["mu_n"])
-mu_beta_meta = float(meta["constants"]["mu_beta"])
-
-# shared defaults in session_state
+# ============================================================
+# SESSION STATE
+# ============================================================
 def _init_state():
     defaults = {
         "Age (yr)": 34,
-        "Temperature (°C)": T0_meta,
-        "temp_is_na": True,  # default temperature NA => use 10
-        # ML features
+        "Temperature (°C)": 10.0,
+        "temp_is_na": True,
         "Soil_pH": 7.8,
         "Chloride Content (mg/kg)": 444.0,
         "Soil_Resistivity (Ω·cm)": 900.0,
@@ -993,7 +904,6 @@ def _init_state():
         "Location wrt Water Table": "Above WaterTable",
         "Foreign_Inclusion_Type": "None",
         "Is_Fill_Material": 0,
-        # NA flags for ML (default False)
         "na_Soil_pH": False,
         "na_Chloride": False,
         "na_Resistivity": False,
@@ -1008,355 +918,302 @@ def _init_state():
         if k not in st.session_state:
             st.session_state[k] = v
 
+
+def render_ml_inputs(prefix, use_session_defaults=True):
+    c1, c2 = st.columns(2, gap="large")
+    user_row = {}
+
+    # Age
+    with c1:
+        feature_header("Age (yr)")
+        checkbox_unknown(f"{prefix}_na_age", default=False, disabled=True)
+        age_val = st.number_input(
+            label="",
+            min_value=1,
+            max_value=200,
+            value=int(st.session_state["Age (yr)"]),
+            step=1,
+            key=f"{prefix}_age",
+            label_visibility="collapsed",
+        )
+
+    # Temperature
+    with c2:
+        feature_header("Temperature (°C)")
+        temp_na = checkbox_unknown(f"{prefix}_temp_na", default=bool(st.session_state["temp_is_na"]))
+        if temp_na:
+            T_used = float(T0_meta)
+            _ = num_input_no_label(f"{prefix}_temp", -50.0, 60.0, float(T0_meta), STEPS["Temperature (°C)"], disabled=True)
+        else:
+            T_used = float(num_input_no_label(f"{prefix}_temp", -50.0, 60.0, float(st.session_state["Temperature (°C)"]), STEPS["Temperature (°C)"]))
+        st.session_state["temp_is_na"] = bool(temp_na)
+        st.session_state["Temperature (°C)"] = float(T_used)
+
+    # Soil_pH
+    with c1:
+        feature_header("Soil_pH")
+        na = checkbox_unknown(f"{prefix}_na_Soil_pH", default=bool(st.session_state["na_Soil_pH"]))
+        st.session_state["na_Soil_pH"] = bool(na)
+        if na:
+            _ = num_input_no_label(f"{prefix}_Soil_pH", *RANGES["Soil_pH"], float(st.session_state["Soil_pH"]), STEPS["Soil_pH"], disabled=True)
+            user_row["Soil_pH"] = np.nan
+        else:
+            v = float(num_input_no_label(f"{prefix}_Soil_pH", *RANGES["Soil_pH"], float(st.session_state["Soil_pH"]), STEPS["Soil_pH"]))
+            st.session_state["Soil_pH"] = v
+            user_row["Soil_pH"] = v
+
+    # Chloride
+    with c2:
+        feature_header("Chloride Content (mg/kg)")
+        na = checkbox_unknown(f"{prefix}_na_Chloride", default=bool(st.session_state["na_Chloride"]))
+        st.session_state["na_Chloride"] = bool(na)
+        if na:
+            _ = num_input_no_label(f"{prefix}_Chloride", *RANGES["Chloride Content (mg/kg)"], float(st.session_state["Chloride Content (mg/kg)"]), STEPS["Chloride Content (mg/kg)"], disabled=True)
+            user_row["Chloride Content (mg/kg)"] = np.nan
+        else:
+            v = float(num_input_no_label(f"{prefix}_Chloride", *RANGES["Chloride Content (mg/kg)"], float(st.session_state["Chloride Content (mg/kg)"]), STEPS["Chloride Content (mg/kg)"]))
+            st.session_state["Chloride Content (mg/kg)"] = v
+            user_row["Chloride Content (mg/kg)"] = v
+
+    # Resistivity
+    with c1:
+        feature_header("Soil_Resistivity (Ω·cm)")
+        na = checkbox_unknown(f"{prefix}_na_Resistivity", default=bool(st.session_state["na_Resistivity"]))
+        st.session_state["na_Resistivity"] = bool(na)
+        if na:
+            _ = num_input_no_label(f"{prefix}_Resistivity", *RANGES["Soil_Resistivity (Ω·cm)"], float(st.session_state["Soil_Resistivity (Ω·cm)"]), STEPS["Soil_Resistivity (Ω·cm)"], disabled=True)
+            user_row["Soil_Resistivity (Ω·cm)"] = np.nan
+        else:
+            v = float(num_input_no_label(f"{prefix}_Resistivity", *RANGES["Soil_Resistivity (Ω·cm)"], float(st.session_state["Soil_Resistivity (Ω·cm)"]), STEPS["Soil_Resistivity (Ω·cm)"]))
+            st.session_state["Soil_Resistivity (Ω·cm)"] = v
+            user_row["Soil_Resistivity (Ω·cm)"] = v
+
+    # Sulphate
+    with c2:
+        feature_header("Sulphate_Content (mg/kg)")
+        na = checkbox_unknown(f"{prefix}_na_Sulphate", default=bool(st.session_state["na_Sulphate"]))
+        st.session_state["na_Sulphate"] = bool(na)
+        if na:
+            _ = num_input_no_label(f"{prefix}_Sulphate", *RANGES["Sulphate_Content (mg/kg)"], float(st.session_state["Sulphate_Content (mg/kg)"]), STEPS["Sulphate_Content (mg/kg)"], disabled=True)
+            user_row["Sulphate_Content (mg/kg)"] = np.nan
+        else:
+            v = float(num_input_no_label(f"{prefix}_Sulphate", *RANGES["Sulphate_Content (mg/kg)"], float(st.session_state["Sulphate_Content (mg/kg)"]), STEPS["Sulphate_Content (mg/kg)"]))
+            st.session_state["Sulphate_Content (mg/kg)"] = v
+            user_row["Sulphate_Content (mg/kg)"] = v
+
+    # Moisture
+    with c1:
+        feature_header("Moisture_Content (%)")
+        na = checkbox_unknown(f"{prefix}_na_Moisture", default=bool(st.session_state["na_Moisture"]))
+        st.session_state["na_Moisture"] = bool(na)
+        if na:
+            _ = num_input_no_label(f"{prefix}_Moisture", *RANGES["Moisture_Content (%)"], float(st.session_state["Moisture_Content (%)"]), STEPS["Moisture_Content (%)"], disabled=True)
+            user_row["Moisture_Content (%)"] = np.nan
+        else:
+            v = float(num_input_no_label(f"{prefix}_Moisture", *RANGES["Moisture_Content (%)"], float(st.session_state["Moisture_Content (%)"]), STEPS["Moisture_Content (%)"]))
+            st.session_state["Moisture_Content (%)"] = v
+            user_row["Moisture_Content (%)"] = v
+
+    # Soil type
+    with c2:
+        feature_header("Soil Type (USCS)")
+        na = checkbox_unknown(f"{prefix}_na_SoilType", default=bool(st.session_state["na_SoilType"]))
+        st.session_state["na_SoilType"] = bool(na)
+        idx = SOIL_TYPES.index(st.session_state["Soil Type"]) if st.session_state["Soil Type"] in SOIL_TYPES else 1
+        if na:
+            _ = select_input_no_label(f"{prefix}_SoilType", SOIL_TYPES, default_idx=idx, disabled=True)
+            user_row["Soil Type"] = np.nan
+        else:
+            v = select_input_no_label(f"{prefix}_SoilType", SOIL_TYPES, default_idx=idx)
+            st.session_state["Soil Type"] = v
+            user_row["Soil Type"] = v
+
+    # Water table
+    with c1:
+        feature_header("Location wrt Water Table")
+        na = checkbox_unknown(f"{prefix}_na_WT", default=bool(st.session_state["na_WT"]))
+        st.session_state["na_WT"] = bool(na)
+        idx = WATER_TABLE.index(st.session_state["Location wrt Water Table"]) if st.session_state["Location wrt Water Table"] in WATER_TABLE else 0
+        if na:
+            _ = select_input_no_label(f"{prefix}_WT", WATER_TABLE, default_idx=idx, disabled=True)
+            user_row["Location wrt Water Table"] = np.nan
+        else:
+            v = select_input_no_label(f"{prefix}_WT", WATER_TABLE, default_idx=idx)
+            st.session_state["Location wrt Water Table"] = v
+            user_row["Location wrt Water Table"] = v
+
+    # Foreign inclusion
+    with c2:
+        feature_header("Foreign_Inclusion_Type")
+        na = checkbox_unknown(f"{prefix}_na_Foreign", default=bool(st.session_state["na_Foreign"]))
+        st.session_state["na_Foreign"] = bool(na)
+        idx = FOREIGN_INCL.index(st.session_state["Foreign_Inclusion_Type"]) if st.session_state["Foreign_Inclusion_Type"] in FOREIGN_INCL else 0
+        if na:
+            _ = select_input_no_label(f"{prefix}_Foreign", FOREIGN_INCL, default_idx=idx, disabled=True)
+            user_row["Foreign_Inclusion_Type"] = np.nan
+        else:
+            v = select_input_no_label(f"{prefix}_Foreign", FOREIGN_INCL, default_idx=idx)
+            st.session_state["Foreign_Inclusion_Type"] = v
+            user_row["Foreign_Inclusion_Type"] = v
+
+    # Fill
+    with c1:
+        feature_header("Is_Fill_Material")
+        na = checkbox_unknown(f"{prefix}_na_Fill", default=bool(st.session_state["na_Fill"]))
+        st.session_state["na_Fill"] = bool(na)
+        idx = FILL_MATERIAL.index(st.session_state["Is_Fill_Material"]) if st.session_state["Is_Fill_Material"] in FILL_MATERIAL else 0
+        if na:
+            _ = select_input_no_label(f"{prefix}_Fill", FILL_MATERIAL, default_idx=idx, disabled=True)
+            user_row["Is_Fill_Material"] = np.nan
+        else:
+            v = select_input_no_label(f"{prefix}_Fill", FILL_MATERIAL, default_idx=idx)
+            st.session_state["Is_Fill_Material"] = int(v)
+            user_row["Is_Fill_Material"] = int(v)
+
+    return int(age_val), float(T_used), user_row
+
+
+# ============================================================
+# STREAMLIT UI
+# ============================================================
+st.set_page_config(page_title="Predicting corrosion-induced thickness loss", layout="wide")
 _init_state()
+prep, gpr, meta = load_artifacts()
 
+expected_cols = meta["expected_raw_columns"]
+T0_meta = float(meta["constants"]["T0"])
+mu_n_meta = float(meta["constants"]["mu_n"])
+mu_beta_meta = float(meta["constants"]["mu_beta"])
 
-def feature_header(text: str):
-    st.markdown(f"<div class='feat'>{text}</div>", unsafe_allow_html=True)
+st.markdown(
+    f"""
+<style>
+  .stApp {{ font-size: 60px; }}
+  .title {{
+    color: {MCMAROON};
+    font-weight: 900;
+    font-size: 52px;
+    margin-bottom: 6px;
+  }}
+  .subtitle {{
+    color: {BLACKTXT};
+    font-size: 20px;
+    font-weight: 300;
+    line-height: 1.25;
+    margin-bottom: 6px;
+  }}
+  .sectiontitle {{
+    color: {MCMAROON};
+    font-size: 30px;
+    font-weight: 900;
+    margin-top: 10px;
+    margin-bottom: 0px;
+  }}
+  .sectionnote {{
+    color: {BLACKTXT};
+    font-size: 22px;
+    font-weight: 500;
+    margin-top: 4px;
+    margin-bottom: 14px;
+  }}
+  .feat {{
+    color: {LABELBLUE};
+    font-weight: 700;
+    font-size: 18px;
+    margin-top: 8px;
+    margin-bottom: 4px;
+  }}
+  div[data-testid="stNumberInput"] label,
+  div[data-testid="stSelectbox"] label,
+  div[data-testid="stCheckbox"] label {{
+    font-size: 16px !important;
+    font-weight: 600 !important;
+    color: {BLACKTXT} !important;
+  }}
+  div[data-testid="stCheckbox"] p {{
+    font-size: 16px !important;
+  }}
+  .stNumberInput input,
+  .stSelectbox div[data-baseweb="select"] {{
+    font-size: 16px !important;
+  }}
+  div.stButton > button,
+  div[data-testid="stFormSubmitButton"] button {{
+    background: {MCYELLOW} !important;
+    border: 2px solid {MCMAROON} !important;
+    color: {MCMAROON} !important;
+    font-weight: 900 !important;
+    font-size: 20px !important;
+    padding: 0.65rem 1.3rem !important;
+    border-radius: 12px !important;
+  }}
+  div.stButton > button:hover,
+  div[data-testid="stFormSubmitButton"] button:hover {{
+    background: #ffd36a !important;
+  }}
+  .outline {{
+    font-size: 24px;
+    line-height: 1.35;
+  }}
+  .katex-display {{
+    margin: 0.4em 0 0.2em 0 !important;
+  }}
+  div[data-baseweb="tab-list"] button,
+  div[data-baseweb="tab-list"] button * {{
+    font-size: 34px !important;
+    font-weight: 600 !important;
+    line-height: 1.2 !important;
+    margin-top: 24px;
+    margin-bottom: 10px;
+  }}
+  div[data-baseweb="tab-list"] button {{
+    padding: 14px 22px !important;
+  }}
+</style>
+""",
+    unsafe_allow_html=True,
+)
 
+st.markdown("<div class='title'>Predicting corrosion-induced thickness loss in buried steel pile</div>", unsafe_allow_html=True)
+st.markdown(
+    "<div class='subtitle'>Estimation of uniform corrosion thickness loss of buried steel pile using multiple standards and probablistic ML model</div>",
+    unsafe_allow_html=True,
+)
 
-def checkbox_unknown(key, default=False, disabled=False):
-    return st.checkbox("Unknown (NA)", value=default, key=key, disabled=disabled)
-
-
-def num_input_no_label(value_key, minv, maxv, default, step, disabled=False):
-    return st.number_input(
-        label="",
-        value=float(default),
-        min_value=float(minv),
-        max_value=float(maxv),
-        step=float(step),
-        key=value_key,
-        disabled=disabled,
-        label_visibility="collapsed",
-    )
-
-
-def select_input_no_label(value_key, options, default_idx=0, disabled=False):
-    return st.selectbox(
-        label="",
-        options=options,
-        index=default_idx,
-        key=value_key,
-        disabled=disabled,
-        label_visibility="collapsed",
-    )
-
-
-# =========================
-# Tabs
-# =========================
 tab1, tab2 = st.tabs(["Design Standards + ML", "Detailed ML + Monte Carlo"])
 
 
 # ============================================================
-# TAB 1: STANDARDS + ML (MC mean with fixed defaults)
+# TAB 1
 # ============================================================
 with tab1:
     st.markdown("<div class='sectiontitle'>Input Parameters</div>", unsafe_allow_html=True)
     st.markdown("<div class='sectionnote'>Up to two unknowns allowed to be imputed by kNN.</div>", unsafe_allow_html=True)
 
-    # CHANGED: remove 3rd column (Tab 1 Settings) -> single input column
-    left = st.container()
-
     with st.form("form_tab1"):
-        # Input box
-        with left:
-            try:
-                box = st.container(border=True)
-            except TypeError:
-                box = st.container()
+        try:
+            box = st.container(border=True)
+        except TypeError:
+            box = st.container()
 
-            with box:
-                c1, c2 = st.columns(2, gap="large")
+        with box:
+            age_val, T_used, user_row_ml = render_ml_inputs("tab1")
 
-                # Age
-                with c1:
-                    feature_header("Age (yr)")
-                    # show NA toggle but keep disabled (Age required)
-                    checkbox_unknown("tab1_na_age", default=False, disabled=True)
-                    age_val = st.number_input(
-                        label="",
-                        min_value=1,
-                        max_value=200,
-                        value=int(st.session_state["Age (yr)"]),
-                        step=1,
-                        key="tab1_age",
-                        label_visibility="collapsed",
-                    )
+        run1 = st.form_submit_button("Run standards + ML")
 
-                # Temperature
-                with c2:
-                    feature_header("Temperature (°C)")
-                    temp_na = checkbox_unknown("tab1_temp_na", default=bool(st.session_state["temp_is_na"]))
-                    if temp_na:
-                        T_used = float(T0_meta)
-                        _ = num_input_no_label(
-                            "tab1_temp", -50.0, 60.0, float(T0_meta), STEPS["Temperature (°C)"], disabled=True
-                        )
-                    else:
-                        T_used = float(
-                            num_input_no_label(
-                                "tab1_temp",
-                                -50.0,
-                                60.0,
-                                float(st.session_state["Temperature (°C)"]),
-                                STEPS["Temperature (°C)"],
-                            )
-                        )
-                    # update shared
-                    st.session_state["temp_is_na"] = bool(temp_na)
-                    st.session_state["Temperature (°C)"] = float(T_used)
-
-                # ML inputs (with NA flags)
-                user_row_ml = {}
-
-                # Soil_pH
-                with c1:
-                    feature_header("Soil_pH")
-                    na = checkbox_unknown("tab1_na_Soil_pH", default=bool(st.session_state["na_Soil_pH"]))
-                    st.session_state["na_Soil_pH"] = bool(na)
-                    if na:
-                        _ = num_input_no_label(
-                            "tab1_Soil_pH", *RANGES["Soil_pH"], float(st.session_state["Soil_pH"]), STEPS["Soil_pH"], disabled=True
-                        )
-                        user_row_ml["Soil_pH"] = np.nan
-                    else:
-                        v = float(
-                            num_input_no_label("tab1_Soil_pH", *RANGES["Soil_pH"], float(st.session_state["Soil_pH"]), STEPS["Soil_pH"])
-                        )
-                        st.session_state["Soil_pH"] = v
-                        user_row_ml["Soil_pH"] = v
-
-                # Chloride
-                with c2:
-                    feature_header("Chloride Content (mg/kg)")
-                    na = checkbox_unknown("tab1_na_Chloride", default=bool(st.session_state["na_Chloride"]))
-                    st.session_state["na_Chloride"] = bool(na)
-                    if na:
-                        _ = num_input_no_label(
-                            "tab1_Chloride",
-                            *RANGES["Chloride Content (mg/kg)"],
-                            float(st.session_state["Chloride Content (mg/kg)"]),
-                            STEPS["Chloride Content (mg/kg)"],
-                            disabled=True,
-                        )
-                        user_row_ml["Chloride Content (mg/kg)"] = np.nan
-                    else:
-                        v = float(
-                            num_input_no_label(
-                                "tab1_Chloride",
-                                *RANGES["Chloride Content (mg/kg)"],
-                                float(st.session_state["Chloride Content (mg/kg)"]),
-                                STEPS["Chloride Content (mg/kg)"],
-                            )
-                        )
-                        st.session_state["Chloride Content (mg/kg)"] = v
-                        user_row_ml["Chloride Content (mg/kg)"] = v
-
-                # Resistivity
-                with c1:
-                    feature_header("Soil_Resistivity (Ω·cm)")
-                    na = checkbox_unknown("tab1_na_Resistivity", default=bool(st.session_state["na_Resistivity"]))
-                    st.session_state["na_Resistivity"] = bool(na)
-                    if na:
-                        _ = num_input_no_label(
-                            "tab1_Resistivity",
-                            *RANGES["Soil_Resistivity (Ω·cm)"],
-                            float(st.session_state["Soil_Resistivity (Ω·cm)"]),
-                            STEPS["Soil_Resistivity (Ω·cm)"],
-                            disabled=True,
-                        )
-                        user_row_ml["Soil_Resistivity (Ω·cm)"] = np.nan
-                    else:
-                        v = float(
-                            num_input_no_label(
-                                "tab1_Resistivity",
-                                *RANGES["Soil_Resistivity (Ω·cm)"],
-                                float(st.session_state["Soil_Resistivity (Ω·cm)"]),
-                                STEPS["Soil_Resistivity (Ω·cm)"],
-                            )
-                        )
-                        st.session_state["Soil_Resistivity (Ω·cm)"] = v
-                        user_row_ml["Soil_Resistivity (Ω·cm)"] = v
-
-                # Sulphate
-                with c2:
-                    feature_header("Sulphate_Content (mg/kg)")
-                    na = checkbox_unknown("tab1_na_Sulphate", default=bool(st.session_state["na_Sulphate"]))
-                    st.session_state["na_Sulphate"] = bool(na)
-                    if na:
-                        _ = num_input_no_label(
-                            "tab1_Sulphate",
-                            *RANGES["Sulphate_Content (mg/kg)"],
-                            float(st.session_state["Sulphate_Content (mg/kg)"]),
-                            STEPS["Sulphate_Content (mg/kg)"],
-                            disabled=True,
-                        )
-                        user_row_ml["Sulphate_Content (mg/kg)"] = np.nan
-                    else:
-                        v = float(
-                            num_input_no_label(
-                                "tab1_Sulphate",
-                                *RANGES["Sulphate_Content (mg/kg)"],
-                                float(st.session_state["Sulphate_Content (mg/kg)"]),
-                                STEPS["Sulphate_Content (mg/kg)"],
-                            )
-                        )
-                        st.session_state["Sulphate_Content (mg/kg)"] = v
-                        user_row_ml["Sulphate_Content (mg/kg)"] = v
-
-                # Moisture
-                with c1:
-                    feature_header("Moisture_Content (%)")
-                    na = checkbox_unknown("tab1_na_Moisture", default=bool(st.session_state["na_Moisture"]))
-                    st.session_state["na_Moisture"] = bool(na)
-                    if na:
-                        _ = num_input_no_label(
-                            "tab1_Moisture",
-                            *RANGES["Moisture_Content (%)"],
-                            float(st.session_state["Moisture_Content (%)"]),
-                            STEPS["Moisture_Content (%)"],
-                            disabled=True,
-                        )
-                        user_row_ml["Moisture_Content (%)"] = np.nan
-                    else:
-                        v = float(
-                            num_input_no_label(
-                                "tab1_Moisture",
-                                *RANGES["Moisture_Content (%)"],
-                                float(st.session_state["Moisture_Content (%)"]),
-                                STEPS["Moisture_Content (%)"],
-                            )
-                        )
-                        st.session_state["Moisture_Content (%)"] = v
-                        user_row_ml["Moisture_Content (%)"] = v
-
-                # Soil type
-                with c2:
-                    feature_header("Soil Type (USCS)")
-                    na = checkbox_unknown("tab1_na_SoilType", default=bool(st.session_state["na_SoilType"]))
-                    st.session_state["na_SoilType"] = bool(na)
-                    if na:
-                        _ = select_input_no_label(
-                            "tab1_SoilType",
-                            SOIL_TYPES,
-                            default_idx=SOIL_TYPES.index(st.session_state["Soil Type"]) if st.session_state["Soil Type"] in SOIL_TYPES else 1,
-                            disabled=True,
-                        )
-                        user_row_ml["Soil Type"] = np.nan
-                    else:
-                        v = select_input_no_label(
-                            "tab1_SoilType",
-                            SOIL_TYPES,
-                            default_idx=SOIL_TYPES.index(st.session_state["Soil Type"]) if st.session_state["Soil Type"] in SOIL_TYPES else 1,
-                        )
-                        st.session_state["Soil Type"] = v
-                        user_row_ml["Soil Type"] = v
-
-                # Water table
-                with c1:
-                    feature_header("Location wrt Water Table")
-                    na = checkbox_unknown("tab1_na_WT", default=bool(st.session_state["na_WT"]))
-                    st.session_state["na_WT"] = bool(na)
-                    if na:
-                        _ = select_input_no_label(
-                            "tab1_WT",
-                            WATER_TABLE,
-                            default_idx=WATER_TABLE.index(st.session_state["Location wrt Water Table"])
-                            if st.session_state["Location wrt Water Table"] in WATER_TABLE
-                            else 0,
-                            disabled=True,
-                        )
-                        user_row_ml["Location wrt Water Table"] = np.nan
-                    else:
-                        v = select_input_no_label(
-                            "tab1_WT",
-                            WATER_TABLE,
-                            default_idx=WATER_TABLE.index(st.session_state["Location wrt Water Table"])
-                            if st.session_state["Location wrt Water Table"] in WATER_TABLE
-                            else 0,
-                        )
-                        st.session_state["Location wrt Water Table"] = v
-                        user_row_ml["Location wrt Water Table"] = v
-
-                # Foreign inclusion type
-                with c2:
-                    feature_header("Foreign_Inclusion_Type")
-                    na = checkbox_unknown("tab1_na_Foreign", default=bool(st.session_state["na_Foreign"]))
-                    st.session_state["na_Foreign"] = bool(na)
-                    if na:
-                        _ = select_input_no_label(
-                            "tab1_Foreign",
-                            FOREIGN_INCL,
-                            default_idx=FOREIGN_INCL.index(st.session_state["Foreign_Inclusion_Type"])
-                            if st.session_state["Foreign_Inclusion_Type"] in FOREIGN_INCL
-                            else 0,
-                            disabled=True,
-                        )
-                        user_row_ml["Foreign_Inclusion_Type"] = np.nan
-                    else:
-                        v = select_input_no_label(
-                            "tab1_Foreign",
-                            FOREIGN_INCL,
-                            default_idx=FOREIGN_INCL.index(st.session_state["Foreign_Inclusion_Type"])
-                            if st.session_state["Foreign_Inclusion_Type"] in FOREIGN_INCL
-                            else 0,
-                        )
-                        st.session_state["Foreign_Inclusion_Type"] = v
-                        user_row_ml["Foreign_Inclusion_Type"] = v
-
-                # Fill
-                with c1:
-                    feature_header("Is_Fill_Material")
-                    na = checkbox_unknown("tab1_na_Fill", default=bool(st.session_state["na_Fill"]))
-                    st.session_state["na_Fill"] = bool(na)
-                    if na:
-                        _ = select_input_no_label("tab1_Fill", FILL_MATERIAL, default_idx=0, disabled=True)
-                        user_row_ml["Is_Fill_Material"] = np.nan
-                    else:
-                        v = select_input_no_label(
-                            "tab1_Fill",
-                            FILL_MATERIAL,
-                            default_idx=FILL_MATERIAL.index(st.session_state["Is_Fill_Material"])
-                            if st.session_state["Is_Fill_Material"] in FILL_MATERIAL
-                            else 0,
-                        )
-                        st.session_state["Is_Fill_Material"] = int(v)
-                        user_row_ml["Is_Fill_Material"] = int(v)
-
-        run1 = st.form_submit_button("Run standards + ML (mean)")
-
-    # ------- OUTPUT TAB 1 -------
     if run1:
-        # update shared age
         st.session_state["Age (yr)"] = int(age_val)
-        age_val = int(age_val)
 
-        # check missing limit for ML
-        miss = count_missing_ml_features(user_row_ml, expected_cols)
+        miss = count_missing_ml_features(user_row_ml, UI_ML_COLS)
         if miss > 2:
             st.error(f"Too many unknown ML inputs: {miss}. Maximum allowed is 2.")
             st.stop()
 
-        # Build ML input df in correct order
-        X_in = pd.DataFrame([{c: user_row_ml.get(c, np.nan) for c in expected_cols}])
-
-        # Predict k distribution
         try:
-            X_tr = prep.transform(X_in)
-            mu_k_arr, sd_k_arr = gpr.predict(np.asarray(X_tr, float), return_std=True)
-            mu_k = float(mu_k_arr[0])
-            sd_k = float(max(sd_k_arr[0], EPS))
+            mu_k, sd_k = predict_ml_k(user_row_ml, prep, gpr, expected_cols)
         except Exception as e:
             st.error(f"ML prediction failed: {e}")
             st.stop()
-
-        # MC mean-only TL at selected age (fixed MC settings)
-        n_bounds = (0.40, 0.70)
-        b_bounds = (0.020, 0.040)
-        Ns_fixed = 5000
-        shared_fixed = False
 
         mc_single = mc_TL_from_k(
             mu_k=mu_k,
@@ -1366,15 +1223,17 @@ with tab1:
             T0=float(T0_meta),
             mu_n=float(mu_n_meta),
             mu_beta=float(mu_beta_meta),
-            n_bounds=n_bounds,
-            beta_bounds=b_bounds,
-            Ns=Ns_fixed,
+            n_bounds=(0.40, 0.70),
+            beta_bounds=(0.020, 0.040),
+            Ns=5000,
             seed=42,
-            shared_n_beta=shared_fixed,
+            shared_n_beta=False,
         ).iloc[0]
-        ml_TL_mean = float(mc_single["Mean_TL (mm)"])
 
-        # Standards inputs row dict (derive foreign flag from foreign type; no separate toggle)
+        ml_mean = float(mc_single["Mean Thickness loss (mm)"])
+        ml_q75 = float(mc_single["Q75 Thickness loss (mm)"])
+        ml_q95 = float(mc_single["Q95 Thickness loss (mm)"])
+
         foreign_type_for_flag = user_row_ml.get("Foreign_Inclusion_Type", st.session_state["Foreign_Inclusion_Type"])
         foreign_flag = derive_foreign_flag(foreign_type_for_flag)
 
@@ -1384,6 +1243,7 @@ with tab1:
             COL_CL: user_row_ml.get("Chloride Content (mg/kg)", np.nan),
             COL_SO4: user_row_ml.get("Sulphate_Content (mg/kg)", np.nan),
             COL_RHO: user_row_ml.get("Soil_Resistivity (Ω·cm)", np.nan),
+            COL_MOIST: user_row_ml.get("Moisture_Content (%)", np.nan),
             COL_SOIL: user_row_ml.get("Soil Type", np.nan),
             COL_LOC: user_row_ml.get("Location wrt Water Table", np.nan),
             COL_FILL: user_row_ml.get("Is_Fill_Material", np.nan),
@@ -1393,42 +1253,37 @@ with tab1:
 
         rates, notes = compute_all_standards(row_std)
 
-        # Build output table: thickness loss over age (rate*age). If rate NaN -> show NA and note.
         rows = []
         for key in STANDARD_KEYS:
             rate = rates.get(key, np.nan)
             loss = np.nan if np.isnan(rate) else float(rate) * float(age_val)
-            rows.append(
-                {
-                    "Method": DISPLAY_NAMES.get(key, key),
-                    f"Thickness Loss at {age_val} yr (mm)": loss,
-                    "Note": notes.get(key, ""),
-                }
-            )
+            rows.append({
+                "Method": DISPLAY_NAMES.get(key, key),
+                f"Thickness Loss at {age_val} yr (mm)": loss,
+                "ML Q75 (mm)": "",
+                "ML 95 (mm)": "",
+                "Note": notes.get(key, ""),
+            })
 
-        # Add ML as a "method" row (thickness loss only)
-        rows.append(
-            {
-                "Method": "Machine Learning (Mean Value)",
-                f"Thickness Loss at {age_val} yr (mm)": ml_TL_mean,
-                "Note": "",
-            }
-        )
+        rows.append({
+            "Method": "Machine Learning (Mean Value)",
+            f"Thickness Loss at {age_val} yr (mm)": ml_mean,
+            "ML Q75 (mm)": round(ml_q75, 3),
+            "ML 95 (mm)": round(ml_q95, 3),
+            "Note": "",
+        })
 
         df_out = pd.DataFrame(rows)
 
         st.markdown("<div class='sectiontitle'>Output</div>", unsafe_allow_html=True)
-
-        out_left, out_right = st.columns([1.15, 1.0], gap="large")
+        out_left, out_right = st.columns([1.2, 1.0], gap="large")
 
         with out_left:
-            # CHANGED: directly show table (no ML k lines, no ML TL text)
             st.dataframe(
                 df_out.style.format({f"Thickness Loss at {age_val} yr (mm)": "{:.3f}"}),
                 use_container_width=True,
                 hide_index=True,
             )
-
             csv_bytes = df_out.to_csv(index=False).encode("utf-8")
             st.download_button(
                 "Download table (CSV)",
@@ -1438,7 +1293,6 @@ with tab1:
             )
 
         with out_right:
-            # Bar plot: thickness loss only (standards + ML)
             plot_df = df_out.copy()
             plot_df["Short"] = [
                 SHORT_NAMES.get("CSA_S6", "CSA"),
@@ -1490,7 +1344,7 @@ with tab1:
 
 
 # ============================================================
-# TAB 2: ML + MONTE CARLO (DETAILED)
+# TAB 2
 # ============================================================
 with tab2:
     st.markdown("<div class='sectiontitle'>Input Parameters</div>", unsafe_allow_html=True)
@@ -1506,219 +1360,47 @@ with tab2:
                 box = st.container()
 
             with box:
-                c1, c2 = st.columns(2, gap="large")
+                age_now, T_used, user_row = render_ml_inputs("tab2")
 
-                # Age
-                with c1:
-                    feature_header("Age (yr)")
-                    checkbox_unknown("tab2_na_age", default=False, disabled=True)
-                    age_now = st.number_input(
-                        label="",
-                        min_value=1,
-                        max_value=200,
-                        value=int(st.session_state["Age (yr)"]),
-                        step=1,
-                        key="tab2_age",
-                        label_visibility="collapsed",
-                    )
-
-                # Temperature
-                with c2:
-                    feature_header("Temperature (°C)")
-                    temp_na = checkbox_unknown("tab2_temp_na", default=bool(st.session_state["temp_is_na"]))
-                    if temp_na:
-                        T_used = float(T0_meta)
-                        _ = num_input_no_label("tab2_temp", -50.0, 60.0, float(T0_meta), STEPS["Temperature (°C)"], disabled=True)
-                    else:
-                        T_used = float(num_input_no_label("tab2_temp", -50.0, 60.0, float(st.session_state["Temperature (°C)"]), STEPS["Temperature (°C)"]))
-                    st.session_state["temp_is_na"] = bool(temp_na)
-                    st.session_state["Temperature (°C)"] = float(T_used)
-
-                # ML row
-                user_row = {}
-
-                # Soil_pH
-                with c1:
-                    feature_header("Soil_pH")
-                    na = checkbox_unknown("tab2_na_Soil_pH", default=bool(st.session_state["na_Soil_pH"]))
-                    st.session_state["na_Soil_pH"] = bool(na)
-                    if na:
-                        _ = num_input_no_label("tab2_Soil_pH", *RANGES["Soil_pH"], float(st.session_state["Soil_pH"]), STEPS["Soil_pH"], disabled=True)
-                        user_row["Soil_pH"] = np.nan
-                    else:
-                        v = float(num_input_no_label("tab2_Soil_pH", *RANGES["Soil_pH"], float(st.session_state["Soil_pH"]), STEPS["Soil_pH"]))
-                        st.session_state["Soil_pH"] = v
-                        user_row["Soil_pH"] = v
-
-                # Chloride
-                with c2:
-                    feature_header("Chloride Content (mg/kg)")
-                    na = checkbox_unknown("tab2_na_Chloride", default=bool(st.session_state["na_Chloride"]))
-                    st.session_state["na_Chloride"] = bool(na)
-                    if na:
-                        _ = num_input_no_label("tab2_Chloride", *RANGES["Chloride Content (mg/kg)"], float(st.session_state["Chloride Content (mg/kg)"]), STEPS["Chloride Content (mg/kg)"], disabled=True)
-                        user_row["Chloride Content (mg/kg)"] = np.nan
-                    else:
-                        v = float(num_input_no_label("tab2_Chloride", *RANGES["Chloride Content (mg/kg)"], float(st.session_state["Chloride Content (mg/kg)"]), STEPS["Chloride Content (mg/kg)"]))
-                        st.session_state["Chloride Content (mg/kg)"] = v
-                        user_row["Chloride Content (mg/kg)"] = v
-
-                # Resistivity
-                with c1:
-                    feature_header("Soil_Resistivity (Ω·cm)")
-                    na = checkbox_unknown("tab2_na_Resistivity", default=bool(st.session_state["na_Resistivity"]))
-                    st.session_state["na_Resistivity"] = bool(na)
-                    if na:
-                        _ = num_input_no_label("tab2_Resistivity", *RANGES["Soil_Resistivity (Ω·cm)"], float(st.session_state["Soil_Resistivity (Ω·cm)"]), STEPS["Soil_Resistivity (Ω·cm)"], disabled=True)
-                        user_row["Soil_Resistivity (Ω·cm)"] = np.nan
-                    else:
-                        v = float(num_input_no_label("tab2_Resistivity", *RANGES["Soil_Resistivity (Ω·cm)"], float(st.session_state["Soil_Resistivity (Ω·cm)"]), STEPS["Soil_Resistivity (Ω·cm)"]))
-                        st.session_state["Soil_Resistivity (Ω·cm)"] = v
-                        user_row["Soil_Resistivity (Ω·cm)"] = v
-
-                # Sulphate
-                with c2:
-                    feature_header("Sulphate_Content (mg/kg)")
-                    na = checkbox_unknown("tab2_na_Sulphate", default=bool(st.session_state["na_Sulphate"]))
-                    st.session_state["na_Sulphate"] = bool(na)
-                    if na:
-                        _ = num_input_no_label("tab2_Sulphate", *RANGES["Sulphate_Content (mg/kg)"], float(st.session_state["Sulphate_Content (mg/kg)"]), STEPS["Sulphate_Content (mg/kg)"], disabled=True)
-                        user_row["Sulphate_Content (mg/kg)"] = np.nan
-                    else:
-                        v = float(num_input_no_label("tab2_Sulphate", *RANGES["Sulphate_Content (mg/kg)"], float(st.session_state["Sulphate_Content (mg/kg)"]), STEPS["Sulphate_Content (mg/kg)"]))
-                        st.session_state["Sulphate_Content (mg/kg)"] = v
-                        user_row["Sulphate_Content (mg/kg)"] = v
-
-                # Moisture
-                with c1:
-                    feature_header("Moisture_Content (%)")
-                    na = checkbox_unknown("tab2_na_Moisture", default=bool(st.session_state["na_Moisture"]))
-                    st.session_state["na_Moisture"] = bool(na)
-                    if na:
-                        _ = num_input_no_label("tab2_Moisture", *RANGES["Moisture_Content (%)"], float(st.session_state["Moisture_Content (%)"]), STEPS["Moisture_Content (%)"], disabled=True)
-                        user_row["Moisture_Content (%)"] = np.nan
-                    else:
-                        v = float(num_input_no_label("tab2_Moisture", *RANGES["Moisture_Content (%)"], float(st.session_state["Moisture_Content (%)"]), STEPS["Moisture_Content (%)"]))
-                        st.session_state["Moisture_Content (%)"] = v
-                        user_row["Moisture_Content (%)"] = v
-
-                # Soil type
-                with c2:
-                    feature_header("Soil Type (USCS)")
-                    na = checkbox_unknown("tab2_na_SoilType", default=bool(st.session_state["na_SoilType"]))
-                    st.session_state["na_SoilType"] = bool(na)
-                    if na:
-                        _ = select_input_no_label("tab2_SoilType", SOIL_TYPES, default_idx=SOIL_TYPES.index(st.session_state["Soil Type"]) if st.session_state["Soil Type"] in SOIL_TYPES else 1, disabled=True)
-                        user_row["Soil Type"] = np.nan
-                    else:
-                        v = select_input_no_label("tab2_SoilType", SOIL_TYPES, default_idx=SOIL_TYPES.index(st.session_state["Soil Type"]) if st.session_state["Soil Type"] in SOIL_TYPES else 1)
-                        st.session_state["Soil Type"] = v
-                        user_row["Soil Type"] = v
-
-                # Water table
-                with c1:
-                    feature_header("Location wrt Water Table")
-                    na = checkbox_unknown("tab2_na_WT", default=bool(st.session_state["na_WT"]))
-                    st.session_state["na_WT"] = bool(na)
-                    if na:
-                        _ = select_input_no_label("tab2_WT", WATER_TABLE, default_idx=WATER_TABLE.index(st.session_state["Location wrt Water Table"]) if st.session_state["Location wrt Water Table"] in WATER_TABLE else 0, disabled=True)
-                        user_row["Location wrt Water Table"] = np.nan
-                    else:
-                        v = select_input_no_label("tab2_WT", WATER_TABLE, default_idx=WATER_TABLE.index(st.session_state["Location wrt Water Table"]) if st.session_state["Location wrt Water Table"] in WATER_TABLE else 0)
-                        st.session_state["Location wrt Water Table"] = v
-                        user_row["Location wrt Water Table"] = v
-
-                # Foreign inclusion type
-                with c2:
-                    feature_header("Foreign_Inclusion_Type")
-                    na = checkbox_unknown("tab2_na_Foreign", default=bool(st.session_state["na_Foreign"]))
-                    st.session_state["na_Foreign"] = bool(na)
-                    if na:
-                        _ = select_input_no_label("tab2_Foreign", FOREIGN_INCL, default_idx=FOREIGN_INCL.index(st.session_state["Foreign_Inclusion_Type"]) if st.session_state["Foreign_Inclusion_Type"] in FOREIGN_INCL else 0, disabled=True)
-                        user_row["Foreign_Inclusion_Type"] = np.nan
-                    else:
-                        v = select_input_no_label("tab2_Foreign", FOREIGN_INCL, default_idx=FOREIGN_INCL.index(st.session_state["Foreign_Inclusion_Type"]) if st.session_state["Foreign_Inclusion_Type"] in FOREIGN_INCL else 0)
-                        st.session_state["Foreign_Inclusion_Type"] = v
-                        user_row["Foreign_Inclusion_Type"] = v
-
-                # Fill
-                with c1:
-                    feature_header("Is_Fill_Material")
-                    na = checkbox_unknown("tab2_na_Fill", default=bool(st.session_state["na_Fill"]))
-                    st.session_state["na_Fill"] = bool(na)
-                    if na:
-                        _ = select_input_no_label("tab2_Fill", FILL_MATERIAL, default_idx=0, disabled=True)
-                        user_row["Is_Fill_Material"] = np.nan
-                    else:
-                        v = select_input_no_label("tab2_Fill", FILL_MATERIAL, default_idx=FILL_MATERIAL.index(st.session_state["Is_Fill_Material"]) if st.session_state["Is_Fill_Material"] in FILL_MATERIAL else 0)
-                        st.session_state["Is_Fill_Material"] = int(v)
-                        user_row["Is_Fill_Material"] = int(v)
-
-        # MC settings (editable)
         with right:
             try:
-                boxr = st.container(border=True)
+                right_box = st.container(border=True)
             except TypeError:
-                boxr = st.container()
-            with boxr:
-                st.markdown(f"<div class='sectiontitle' style='margin-top:0;'>Monte Carlo Settings</div>", unsafe_allow_html=True)
+                right_box = st.container()
+
+            with right_box:
+                st.markdown("<div class='sectiontitle' style='margin-top:0;'>Monte Carlo Settings</div>", unsafe_allow_html=True)
                 st.markdown("<div class='sectionnote' style='margin-bottom:10px;'> </div>", unsafe_allow_html=True)
 
-                Ns = st.number_input("Sample size (Ns)", min_value=1000, max_value=50000, value=MC_NS_DEFAULT, step=1000, key="tab2_Ns")
-                nL = st.number_input("n lower bound", value=0.40, step=0.01, format="%.2f", key="tab2_nL")
-                nU = st.number_input("n upper bound", value=0.70, step=0.01, format="%.2f", key="tab2_nU")
-                bL = st.number_input("β lower bound", value=0.020, step=0.001, format="%.3f", key="tab2_bL")
-                bU = st.number_input("β upper bound", value=0.040, step=0.001, format="%.3f", key="tab2_bU")
-                shared = st.checkbox("Shared n, β across samples", value=False, key="tab2_shared")
+                Ns = st.number_input("Sample size (Ns)", min_value=1000, max_value=50000, value=MC_NS_DEFAULT, step=1000)
+                nL = st.number_input("n lower bound", value=0.40, step=0.01, format="%.2f")
+                nU = st.number_input("n upper bound", value=0.70, step=0.01, format="%.2f")
+                bL = st.number_input("β lower bound", value=0.020, step=0.001, format="%.3f")
+                bU = st.number_input("β upper bound", value=0.040, step=0.001, format="%.3f")
+                shared = st.checkbox("Shared n, β across samples", value=False)
 
         run2 = st.form_submit_button("Run predictions + Monte Carlo")
 
-    # ------- OUTPUT TAB 2 -------
     if run2:
-        # update shared age
         st.session_state["Age (yr)"] = int(age_now)
-        age_now = int(age_now)
 
-        miss = count_missing_ml_features(user_row, expected_cols)
+        miss = count_missing_ml_features(user_row, UI_ML_COLS)
         if miss > 2:
             st.error(f"Too many unknown ML inputs: {miss}. Maximum allowed is 2.")
             st.stop()
 
-        X_in = pd.DataFrame([{c: user_row.get(c, np.nan) for c in expected_cols}])
-
         try:
-            X_tr = prep.transform(X_in)
-            mu_k_arr, sd_k_arr = gpr.predict(np.asarray(X_tr, float), return_std=True)
-            mu_k = float(mu_k_arr[0])
-            sd_k = float(max(sd_k_arr[0], EPS))
+            mu_k, sd_k = predict_ml_k(user_row, prep, gpr, expected_cols)
         except Exception as e:
             st.error(f"Prediction failed: {e}")
             st.stop()
 
-        # Single age
-        single = mc_TL_from_k(
-            mu_k=mu_k,
-            sd_k=sd_k,
-            ages=[age_now],
-            T_used=float(T_used),
-            T0=float(T0_meta),
-            mu_n=float(mu_n_meta),
-            mu_beta=float(mu_beta_meta),
-            n_bounds=(float(nL), float(nU)),
-            beta_bounds=(float(bL), float(bU)),
-            Ns=int(Ns),
-            seed=42,
-            shared_n_beta=bool(shared),
-        ).iloc[0]
+        ages_eval = ensure_age_in_horizon(age_now, AGES_HORIZON)
 
-        mean_TL = float(single["Mean_TL (mm)"])
-        sd_TL = float(single["TL_sd (mm)"])
-
-        # Horizon
         horizon_df = mc_TL_from_k(
             mu_k=mu_k,
             sd_k=sd_k,
-            ages=AGES_HORIZON,
+            ages=ages_eval,
             T_used=float(T_used),
             T0=float(T0_meta),
             mu_n=float(mu_n_meta),
@@ -1730,18 +1412,19 @@ with tab2:
             shared_n_beta=bool(shared),
         )
 
-        out_tbl = pd.DataFrame(
-            {
-                "Age": horizon_df["Age"].astype(int),
-                "Mean_TL (mm)": horizon_df["Mean_TL (mm)"].round(3),
-                "TL_sd (mm)": horizon_df["TL_sd (mm)"].round(3),
-                "TL (68% CI)": [fmt_ci(a, b, 3) for a, b in zip(horizon_df["TL_lo68 (mm)"], horizon_df["TL_hi68 (mm)"])],
-                "TL (95% CI)": [fmt_ci(a, b, 3) for a, b in zip(horizon_df["TL_lo95 (mm)"], horizon_df["TL_hi95 (mm)"])],
-            }
-        )
+        single = horizon_df.loc[horizon_df["Age"] == int(age_now)].iloc[0]
+        mean_TL = float(single["Mean Thickness loss (mm)"])
+        q75 = float(single["Q75 Thickness loss (mm)"])
+        q95 = float(single["Q95 Thickness loss (mm)"])
+
+        out_tbl = pd.DataFrame({
+            "Age": horizon_df["Age"].astype(int),
+            "Mean Thickness loss (mm)": horizon_df["Mean Thickness loss (mm)"].round(3),
+            "75 Quantile": horizon_df["Q75 Thickness loss (mm)"].round(3),
+            "95 Quantile": horizon_df["Q95 Thickness loss (mm)"].round(3),
+        })
 
         st.markdown("<div class='sectiontitle'>Output</div>", unsafe_allow_html=True)
-
         out_left, out_right = st.columns([1.2, 1.0], gap="large")
 
         with out_left:
@@ -1749,28 +1432,37 @@ with tab2:
             st.latex(rf"\mu_k={mu_k:.6f}\qquad \sigma_k={sd_k:.6f}")
 
             st.markdown(f"<div class='outline'><b>Thickness loss at Input Age ({age_now} years)</b></div>", unsafe_allow_html=True)
-            st.latex(rf"\text{{68\% CI: }} {mean_TL:.3f}\pm{sd_TL:.3f}\qquad \text{{95\% CI: }} {mean_TL:.3f}\pm{2.0*sd_TL:.3f}")
+            st.write(
+                f"Mean Thickness loss (mm) = **{mean_TL:.3f}**   |   "
+                f"75 Quantile = **{q75:.3f}**   |   "
+                f"95 Quantile = **{q95:.3f}**"
+            )
 
             st.markdown("<div class='sectiontitle'>Thickness Loss across Time</div>", unsafe_allow_html=True)
             st.dataframe(out_tbl, use_container_width=True, hide_index=True)
 
             csv_bytes = out_tbl.to_csv(index=False).encode("utf-8")
-            st.download_button("Download TL table (CSV)", data=csv_bytes, file_name="thickness_loss_table.csv", mime="text/csv")
+            st.download_button(
+                "Download TL table (CSV)",
+                data=csv_bytes,
+                file_name="thickness_loss_table.csv",
+                mime="text/csv",
+            )
 
         with out_right:
             ages = horizon_df["Age"].values
-            mean = horizon_df["Mean_TL (mm)"].values
-            lo68 = horizon_df["TL_lo68 (mm)"].values
-            hi68 = horizon_df["TL_hi68 (mm)"].values
-            lo95 = horizon_df["TL_lo95 (mm)"].values
-            hi95 = horizon_df["TL_hi95 (mm)"].values
+            mean = horizon_df["Mean Thickness loss (mm)"].values
+            lo50 = horizon_df["Q25 Thickness loss (mm)"].values
+            hi50 = horizon_df["Q75 Thickness loss (mm)"].values
+            lo90 = horizon_df["Q05 Thickness loss (mm)"].values
+            hi90 = horizon_df["Q95 Thickness loss (mm)"].values
 
             fig = plt.figure(figsize=(10, 6))
-            plt.plot(ages, mean, linewidth=2, label="Mean TL")
-            plt.fill_between(ages, lo95, hi95, alpha=0.20, label="95% CI")
-            plt.fill_between(ages, lo68, hi68, alpha=0.35, label="68% CI")
+            plt.plot(ages, mean, linewidth=2.5, color=PLOT_MEAN, label="Mean Thickness loss")
+            plt.fill_between(ages, lo90, hi90, alpha=0.18, color=PLOT_BAND, label="90% band (5–95)")
+            plt.fill_between(ages, lo50, hi50, alpha=0.35, color=PLOT_BAND, label="50% band (25–75)")
             plt.xlabel("Age (year)")
-            plt.ylabel("Thickness Loss (mm)")
+            plt.ylabel("Thickness loss (mm)")
             plt.grid(True, alpha=0.3)
             plt.legend()
             st.pyplot(fig)
