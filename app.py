@@ -1251,7 +1251,7 @@ with tab1:
             COL_FTYPE: foreign_type_for_flag,
         }
 
-                rates, notes = compute_all_standards(row_std)
+        rates, notes = compute_all_standards(row_std)
 
         rows = []
         for key in STANDARD_KEYS:
