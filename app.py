@@ -1251,7 +1251,7 @@ with tab1:
             COL_FTYPE: foreign_type_for_flag,
         }
 
-        rates, notes = compute_all_standards(row_std)
+                rates, notes = compute_all_standards(row_std)
 
         rows = []
         for key in STANDARD_KEYS:
@@ -1260,16 +1260,23 @@ with tab1:
             rows.append({
                 "Method": DISPLAY_NAMES.get(key, key),
                 f"Thickness Loss at {age_val} yr (mm)": loss,
-                "ML Q75 (mm)": "",
-                "ML 95 (mm)": "",
                 "Note": notes.get(key, ""),
             })
 
+        # ML rows as separate rows
         rows.append({
-            "Method": "Machine Learning (Mean Value)",
+            "Method": "ML Mean",
             f"Thickness Loss at {age_val} yr (mm)": ml_mean,
-            "ML Q75 (mm)": round(ml_q75, 3),
-            "ML 95 (mm)": round(ml_q95, 3),
+            "Note": "",
+        })
+        rows.append({
+            "Method": "ML Q75",
+            f"Thickness Loss at {age_val} yr (mm)": ml_q75,
+            "Note": "",
+        })
+        rows.append({
+            "Method": "ML Q95",
+            f"Thickness Loss at {age_val} yr (mm)": ml_q95,
             "Note": "",
         })
 
@@ -1293,8 +1300,7 @@ with tab1:
             )
 
         with out_right:
-            plot_df = df_out.copy()
-            plot_df["Short"] = [
+            plot_labels = [
                 SHORT_NAMES.get("CSA_S6", "CSA"),
                 SHORT_NAMES.get("Eurocode", "EN"),
                 SHORT_NAMES.get("AS2159", "AS"),
@@ -1305,7 +1311,25 @@ with tab1:
                 SHORT_NAMES.get("China", "JTG"),
                 SHORT_NAMES.get("DIN", "DIN"),
                 SHORT_NAMES.get("Caltrans", "Caltrans"),
-                "ML",
+                "ML Mean",
+                "ML Q75",
+                "ML Q95",
+            ]
+
+            plot_values = [
+                df_out.iloc[0][f"Thickness Loss at {age_val} yr (mm)"],
+                df_out.iloc[1][f"Thickness Loss at {age_val} yr (mm)"],
+                df_out.iloc[2][f"Thickness Loss at {age_val} yr (mm)"],
+                df_out.iloc[3][f"Thickness Loss at {age_val} yr (mm)"],
+                df_out.iloc[4][f"Thickness Loss at {age_val} yr (mm)"],
+                df_out.iloc[5][f"Thickness Loss at {age_val} yr (mm)"],
+                df_out.iloc[6][f"Thickness Loss at {age_val} yr (mm)"],
+                df_out.iloc[7][f"Thickness Loss at {age_val} yr (mm)"],
+                df_out.iloc[8][f"Thickness Loss at {age_val} yr (mm)"],
+                df_out.iloc[9][f"Thickness Loss at {age_val} yr (mm)"],
+                df_out.iloc[10][f"Thickness Loss at {age_val} yr (mm)"],
+                df_out.iloc[11][f"Thickness Loss at {age_val} yr (mm)"],
+                df_out.iloc[12][f"Thickness Loss at {age_val} yr (mm)"],
             ]
 
             colors = [
@@ -1320,15 +1344,14 @@ with tab1:
                 STANDARD_COLORS.get("DIN"),
                 STANDARD_COLORS.get("Caltrans"),
                 "#444444",
+                "#777777",
+                "#AAAAAA",
             ]
 
-            yvals = plot_df[f"Thickness Loss at {age_val} yr (mm)"].values.astype(float)
-            xlabels = plot_df["Short"].values
-
-            fig, ax = plt.subplots(figsize=(10, 6))
-            ax.bar(np.arange(len(xlabels)), yvals, color=colors, edgecolor="black")
-            ax.set_xticks(np.arange(len(xlabels)))
-            ax.set_xticklabels(xlabels, fontsize=14)
+            fig, ax = plt.subplots(figsize=(11, 6))
+            ax.bar(np.arange(len(plot_labels)), plot_values, color=colors, edgecolor="black")
+            ax.set_xticks(np.arange(len(plot_labels)))
+            ax.set_xticklabels(plot_labels, fontsize=12, rotation=45, ha="right")
             ax.set_ylabel(f"Thickness Loss at {age_val} yr (mm)", fontsize=16)
             ax.yaxis.set_major_formatter(FMT)
             ax.grid(axis="y", alpha=0.3)
@@ -1341,7 +1364,6 @@ with tab1:
                 file_name=f"thickness_loss_bar_age_{age_val}.png",
                 mime="image/png",
             )
-
 
 # ============================================================
 # TAB 2
